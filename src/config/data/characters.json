@@ -1,0 +1,38 @@
+{
+  "pea_gunner": {
+    "id": "pea_gunner",
+    "displayName": "豌豆枪手",
+    "role": "gunner",
+    "tagline": "用它打僵尸，赚阳光种花，越打越富",
+    "maxHealth": 100,
+    "damageMultiplier": 1.0,
+    "moveSpeedMultiplier": 1.0,
+    "passiveSunPerSecond": 0,
+    "startingSun": 0,
+    "startingItems": { "medkit": 2 },
+    "startingReserveAmmo": 240,
+    "weapon": "pea_gun",
+    "canBuyAmmo": true,
+    "availableSeeds": ["sunflower_seed", "nut_wall_seed"],
+    "blockedSeeds": ["pea_shooter_seed", "ice_shooter_seed", "bomb_flower_seed", "vine_trap_seed"],
+    "availablePotions": ["ice_potion", "power_potion"]
+  },
+  "sunflower": {
+    "id": "sunflower",
+    "displayName": "太阳花",
+    "role": "economy",
+    "tagline": "你不能开枪，但你可以买下一支植物军队",
+    "maxHealth": 80,
+    "damageMultiplier": 1.0,
+    "moveSpeedMultiplier": 1.15,
+    "passiveSunPerSecond": 15,
+    "startingSun": 100,
+    "startingItems": { "medkit": 1, "pea_shooter_seed": 1 },
+    "startingReserveAmmo": 0,
+    "weapon": null,
+    "canBuyAmmo": false,
+    "availableSeeds": ["pea_shooter_seed", "ice_shooter_seed", "nut_wall_seed", "bomb_flower_seed", "vine_trap_seed"],
+    "blockedSeeds": ["sunflower_seed"],
+    "availablePotions": []
+  }
+}

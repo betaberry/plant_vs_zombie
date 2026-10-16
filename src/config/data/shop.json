@@ -1,0 +1,55 @@
+{
+  "items": [
+    { "id": "ammo_pack", "category": "ammo", "price": 25, "maxCarry": null,
+      "name": "弹药包", "desc": "立即补充 48 发备弹（上限 240）", "availableTo": ["pea_gunner"] },
+
+    { "id": "ice_potion", "category": "potion", "price": 60, "maxCarry": 2, "durationSeconds": 30,
+      "name": "寒冰剂", "desc": "30 秒内子弹变为寒冰弹，命中减速僵尸 50%（3 秒）",
+      "availableTo": ["pea_gunner"],
+      "effect": { "type": "ice", "slowPercent": 50, "slowDuration": 3 } },
+    { "id": "power_potion", "category": "potion", "price": 80, "maxCarry": 2, "durationSeconds": 30,
+      "name": "强化剂", "desc": "30 秒内豌豆枪伤害 +50%", "availableTo": ["pea_gunner"],
+      "effect": { "type": "power", "damageMultiplier": 1.5 } },
+
+    { "id": "sunflower_seed", "category": "seed", "price": 50, "maxCarry": 3,
+      "name": "太阳花苗种子", "desc": "种下后每秒产出 4 阳光", "availableTo": ["pea_gunner"] },
+    { "id": "pea_shooter_seed", "category": "seed", "price": 75, "maxCarry": 3,
+      "name": "豌豆射手种子", "desc": "种下后自动攻击 15 米内的僵尸",
+      "availableTo": ["sunflower"] },
+    { "id": "nut_wall_seed", "category": "seed", "price": 40, "maxCarry": 4,
+      "name": "坚果墙种子", "desc": "种下一面墙体，阻挡并改道僵尸", "availableTo": ["pea_gunner", "sunflower"] },
+    { "id": "bomb_flower_seed", "category": "seed", "price": 60, "maxCarry": 2,
+      "name": "炸弹花种子", "desc": "种下 3 秒后爆炸（半径 5 米，中心 200 伤害），一次性",
+      "availableTo": ["sunflower"] },
+    { "id": "vine_trap_seed", "category": "seed", "price": 45, "maxCarry": 2,
+      "name": "藤蔓陷阱种子", "desc": "僵尸踩上时定身 5 秒，一次性", "availableTo": ["sunflower"] },
+    { "id": "ice_shooter_seed", "category": "seed", "price": 120, "maxCarry": 2,
+      "name": "寒冰射手种子", "desc": "同豌豆射手，命中额外减速 40%", "availableTo": ["sunflower"] },
+
+    { "id": "medkit", "category": "consumable", "price": 15, "maxCarry": 3,
+      "name": "医疗包", "desc": "回复 40 点生命", "availableTo": ["pea_gunner", "sunflower"],
+      "effect": { "type": "heal", "amount": 40, "useTime": 1.5 } },
+    { "id": "grenade", "category": "consumable", "price": 50, "maxCarry": 3, "enabled": false,
+      "name": "手雷", "desc": "投掷爆炸，半径 4 米", "availableTo": ["pea_gunner", "sunflower"] },
+    { "id": "armor_plate", "category": "consumable", "price": 30, "maxCarry": 2, "enabled": false,
+      "name": "护甲板", "desc": "受到伤害减少 30%，持续 60 秒",
+      "availableTo": ["pea_gunner", "sunflower"] },
+    { "id": "speed_shoes", "category": "consumable", "price": 20, "maxCarry": 2, "enabled": false,
+      "name": "加速鞋", "desc": "移动速度 +25%，持续 30 秒",
+      "availableTo": ["pea_gunner", "sunflower"] },
+
+    { "id": "pea_gun_upgrade", "category": "equipment", "price": 150, "maxCarry": 1,
+      "name": "豌豆枪强化", "desc": "豌豆枪伤害 +20%（本次存档永久）",
+      "availableTo": ["pea_gunner"],
+      "effect": { "type": "permanentDamage", "bonus": 0.2 } },
+    { "id": "sun_boost", "category": "equipment", "price": 150, "maxCarry": 1,
+      "name": "阳光增效", "desc": "太阳花本体产出 +20%（本次存档永久）",
+      "availableTo": ["sunflower"],
+      "effect": { "type": "permanentSun", "bonus": 0.2 } }
+  ],
+  "rules": {
+    "potionStacking": "replace",
+    "ammoAppliesImmediately": true,
+    "newbieSafetyPricing": true
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "id": "city_01",
+  "size": [300, 300],
+  "boundaryWallHeight": 6,
+  "districts": [
+    { "id": "start", "name": "起点街区", "rect": [-150, 0, 0, 150] },
+    { "id": "commercial", "name": "商业街", "rect": [0, 0, 150, 150] },
+    { "id": "residential", "name": "住宅区", "rect": [-150, -150, 0, 0] },
+    { "id": "industrial", "name": "工业区", "rect": [0, -150, 150, 0] }
+  ],
+  "highValueAreas": [
+    { "id": "hv_warehouse", "name": "仓库区", "rect": [80, -140, 140, -85] },
+    { "id": "hv_supermarket", "name": "超市", "rect": [60, 28, 92, 52] }
+  ],
+  "roads": { "halfWidth": 10, "centerNoPlantHalfWidth": 3 },
+  "playerSpawns": [
+    { "id": "sp_1", "pos": [-55, 1, 25] },
+    { "id": "sp_2", "pos": [-100, 1, 120] },
+    { "id": "sp_3", "pos": [40, 1, 20] },
+    { "id": "sp_4", "pos": [-25, 1, -25] },
+    { "id": "sp_5", "pos": [125, 1, -20] },
+    { "id": "sp_6", "pos": [90, 1, 130] },
+    { "id": "sp_7", "pos": [-130, 1, -70] }
+  ],
+  "trainingDummy": [-55, 0, 40],
+  "buildings": [
+    { "id": "b_start_house", "name": "起点小屋", "district": "start", "center": [-70, 70], "size": [16, 14], "height": 7, "enterable": true, "doorSide": "south", "color": "#e0b07a" },
+    { "id": "b_supermarket", "name": "超市", "district": "commercial", "center": [75, 40], "size": [26, 16], "height": 7, "enterable": true, "doorSide": "south", "color": "#9fc5e8", "landmark": "supermarket" },
+    { "id": "b_res_1", "name": "住宅 1 号楼", "district": "residential", "center": [-40, -45], "size": [14, 12], "height": 7, "enterable": true, "doorSide": "north", "color": "#d5a6bd" },
+    { "id": "b_res_2", "name": "住宅 2 号楼", "district": "residential", "center": [-85, -45], "size": [14, 12], "height": 7, "enterable": true, "doorSide": "north", "color": "#b6d7a8" },
+    { "id": "b_res_3", "name": "住宅 3 号楼", "district": "residential", "center": [-60, -100], "size": [16, 12], "height": 7, "enterable": true, "doorSide": "east", "color": "#ffe599" },
+    { "id": "b_clock", "name": "钟楼", "district": "start", "center": [-35, 35], "size": [6, 6], "height": 24, "enterable": false, "color": "#c9a27e", "landmark": "clock" },
+    { "id": "b_start_shed", "name": "仓棚", "district": "start", "center": [-125, 125], "size": [12, 12], "height": 6, "enterable": false, "color": "#a0866a" },
+    { "id": "b_shop_1", "name": "商铺 A", "district": "commercial", "center": [30, 85], "size": [12, 34], "height": 9, "enterable": false, "color": "#f4cccc" },
+    { "id": "b_shop_2", "name": "商铺 B", "district": "commercial", "center": [65, 105], "size": [30, 12], "height": 12, "enterable": false, "color": "#cfe2f3" },
+    { "id": "b_shop_3", "name": "商铺 C", "district": "commercial", "center": [115, 95], "size": [16, 26], "height": 10, "enterable": false, "color": "#fce5cd" },
+    { "id": "b_shop_4", "name": "商铺 D", "district": "commercial", "center": [120, 40], "size": [14, 18], "height": 8, "enterable": false, "color": "#d9ead3" },
+    { "id": "b_res_block_1", "name": "民居", "district": "residential", "center": [-120, -40], "size": [14, 14], "height": 7, "enterable": false, "color": "#ead1dc" },
+    { "id": "b_res_block_2", "name": "民居", "district": "residential", "center": [-20, -115], "size": [12, 14], "height": 7, "enterable": false, "color": "#d0e0e3" },
+    { "id": "b_res_block_3", "name": "民居", "district": "residential", "center": [-120, -100], "size": [14, 14], "height": 7, "enterable": false, "color": "#fff2cc" },
+    { "id": "b_warehouse", "name": "仓库", "district": "industrial", "center": [100, -105], "size": [34, 22], "height": 10, "enterable": false, "color": "#999999" },
+    { "id": "b_kiosk", "name": "加油站便利店", "district": "industrial", "center": [52, -46], "size": [6, 5], "height": 3.5, "enterable": false, "color": "#f6b26b" }
+  ],
+  "props": [
+    { "id": "gas_station", "kind": "gas_station", "pos": [40, 0, -32] },
+    { "id": "fountain", "kind": "fountain", "pos": [-90, 0, 95] },
+    { "id": "ramp_steep", "kind": "ramp", "pos": [85, 0, -28], "slopeDeg": 30, "size": [6, 0.3, 4] },
+    { "id": "ramp_gentle", "kind": "ramp", "pos": [110, 0, -26], "slopeDeg": 10, "size": [8, 0.3, 4] },
+    { "id": "ct_1", "kind": "container", "pos": [70, 0, -60] },
+    { "id": "ct_2", "kind": "container", "pos": [78, 0, -60] },
+    { "id": "ct_3", "kind": "container", "pos": [70, 0, -75], "rotYDeg": 90 },
+    { "id": "ct_4", "kind": "container", "pos": [110, 0, -40] },
+    { "id": "ct_5", "kind": "container", "pos": [120, 0, -50], "rotYDeg": 90 },
+    { "id": "ct_6", "kind": "container", "pos": [95, 0, -70] },
+    { "id": "ct_7", "kind": "container", "pos": [130, 0, -90], "rotYDeg": 90 },
+    { "id": "ct_8", "kind": "container", "pos": [60, 0, -125] },
+    { "id": "car_1", "kind": "car", "pos": [-5, 0, 60], "rotYDeg": 90 },
+    { "id": "car_2", "kind": "car", "pos": [6, 0, -70], "rotYDeg": 90 },
+    { "id": "car_3", "kind": "car", "pos": [60, 0, 5] },
+    { "id": "car_4", "kind": "car", "pos": [-90, 0, -5] },
+    { "id": "barricade_1", "kind": "barricade", "pos": [45, 0, 72], "rotYDeg": 0 },
+    { "id": "barricade_2", "kind": "barricade", "pos": [0, 0, 100], "rotYDeg": 0 },
+    { "id": "barricade_3", "kind": "barricade", "pos": [-60, 0, 0], "rotYDeg": 90 },
+    { "id": "bin_1", "kind": "trashbin", "pos": [-50, 0, 15] },
+    { "id": "bin_2", "kind": "trashbin", "pos": [44, 0, 92] },
+    { "id": "bin_3", "kind": "trashbin", "pos": [-30, 0, -60] },
+    { "id": "lamp_1", "kind": "lamp", "pos": [12, 0, 30] },
+    { "id": "lamp_2", "kind": "lamp", "pos": [12, 0, 80] },
+    { "id": "lamp_3", "kind": "lamp", "pos": [-12, 0, 50] },
+    { "id": "lamp_4", "kind": "lamp", "pos": [-12, 0, 110] },
+    { "id": "lamp_5", "kind": "lamp", "pos": [12, 0, -40] },
+    { "id": "lamp_6", "kind": "lamp", "pos": [-12, 0, -90] },
+    { "id": "lamp_7", "kind": "lamp", "pos": [40, 0, 12] },
+    { "id": "lamp_8", "kind": "lamp", "pos": [-40, 0, -12] },
+    { "id": "lamp_9", "kind": "lamp", "pos": [100, 0, -12] },
+    { "id": "lamp_10", "kind": "lamp", "pos": [-100, 0, 12] }
+  ],
+  "zombieSpawners": [
+    { "id": "zs_s1", "type": "basic_zombie", "pos": [-110, 0, 40], "maxAlive": 2, "respawnCooldown": 12, "activationRadius": 70, "mode": "outdoor" },
+    { "id": "zs_s2", "type": "basic_zombie", "pos": [-30, 0, 120], "maxAlive": 1, "respawnCooldown": 15, "activationRadius": 70, "mode": "outdoor" },
+    { "id": "zs_c1", "type": "basic_zombie", "pos": [45, 0, 60], "maxAlive": 3, "respawnCooldown": 8, "activationRadius": 60, "mode": "outdoor", "patrolRoute": "pr_2" },
+    { "id": "zs_c2", "type": "basic_zombie", "pos": [95, 0, 125], "maxAlive": 3, "respawnCooldown": 8, "activationRadius": 60, "mode": "outdoor" },
+    { "id": "zs_c3", "type": "basic_zombie", "pos": [135, 0, 65], "maxAlive": 2, "respawnCooldown": 10, "activationRadius": 60, "mode": "outdoor" },
+    { "id": "zs_r1", "type": "basic_zombie", "pos": [-60, 0, -70], "maxAlive": 3, "respawnCooldown": 8, "activationRadius": 55, "mode": "outdoor" },
+    { "id": "zs_r2", "type": "basic_zombie", "pos": [-120, 0, -125], "maxAlive": 3, "respawnCooldown": 8, "activationRadius": 55, "mode": "outdoor" },
+    { "id": "zs_r3", "type": "basic_zombie", "building": "b_res_2", "room": "backLeft", "maxAlive": 2, "respawnCooldown": 20, "activationRadius": 40, "mode": "indoor" },
+    { "id": "zs_r4", "type": "basic_zombie", "building": "b_res_3", "room": "upstairs", "maxAlive": 2, "respawnCooldown": 20, "activationRadius": 40, "mode": "indoor" },
+    { "id": "zs_i1", "type": "basic_zombie", "pos": [60, 0, -110], "maxAlive": 4, "respawnCooldown": 6, "activationRadius": 60, "mode": "outdoor" },
+    { "id": "zs_i2", "type": "basic_zombie", "pos": [125, 0, -65], "maxAlive": 4, "respawnCooldown": 6, "activationRadius": 60, "mode": "outdoor" },
+    { "id": "zs_i3", "type": "basic_zombie", "pos": [30, 0, -130], "maxAlive": 3, "respawnCooldown": 6, "activationRadius": 60, "mode": "outdoor" },
+    { "id": "zs_i4", "type": "basic_zombie", "pos": [135, 0, -130], "maxAlive": 4, "respawnCooldown": 6, "activationRadius": 60, "mode": "outdoor" },
+    { "id": "zs_i5", "type": "basic_zombie", "pos": [70, 0, -90], "maxAlive": 3, "respawnCooldown": 6, "activationRadius": 60, "mode": "outdoor", "patrolRoute": "pr_3" }
+  ],
+  "ambushPoints": [
+    { "id": "am_1", "building": "b_start_house", "room": "backRight", "count": 1, "trigger": "player_inside" },
+    { "id": "am_2", "building": "b_res_1", "room": "backLeft", "count": 2, "trigger": "player_inside" },
+    { "id": "am_3", "building": "b_res_1", "room": "upstairs", "count": 1, "trigger": "player_inside" },
+    { "id": "am_4", "building": "b_res_2", "room": "backRight", "count": 2, "trigger": "player_inside" },
+    { "id": "am_5", "building": "b_res_3", "room": "hall", "count": 2, "trigger": "player_inside" },
+    { "id": "am_6", "building": "b_supermarket", "room": "backLeft", "count": 2, "trigger": "player_inside" }
+  ],
+  "patrolRoutes": [
+    { "id": "pr_1", "waypoints": [[0, 0, -120], [0, 0, -40], [0, 0, 40], [0, 0, 120]] },
+    { "id": "pr_2", "waypoints": [[45, 0, 40], [95, 0, 60], [95, 0, 80], [45, 0, 95]] },
+    { "id": "pr_3", "waypoints": [[60, 0, -90], [85, 0, -80], [85, 0, -50], [60, 0, -50]] }
+  ],
+  "pickupPoints": [
+    { "id": "pu_1", "building": "b_start_house", "room": "upstairs", "item": "sun_pack", "respawn": 60 },
+    { "id": "pu_2", "building": "b_res_1", "room": "backRight", "item": "medkit", "respawn": 90 },
+    { "id": "pu_3", "building": "b_supermarket", "room": "backRight", "item": "sun_pack", "respawn": 60 },
+    { "id": "pu_4", "pos": [20, 0.5, -60], "item": "sun_pack", "respawn": 45 },
+    { "id": "pu_5", "building": "b_res_3", "room": "upstairsBack", "item": "medkit", "respawn": 90 },
+    { "id": "pu_6", "pos": [-120, 0.5, -60], "item": "sun_pack", "respawn": 45 },
+    { "id": "pu_7", "pos": [105, 0.5, -80], "item": "sun_pack", "respawn": 40 },
+    { "id": "pu_8", "building": "b_supermarket", "room": "upstairs", "item": "medkit", "respawn": 90 }
+  ],
+  "plantableZones": [
+    { "id": "pz_city", "type": "polygon", "points": [[-145, -145], [145, -145], [145, 145], [-145, 145]] }
+  ],
+  "nonPlantableZones": [
+    { "id": "np_road_ns", "type": "road_center", "points": [[-3, -150], [3, -150], [3, 150], [-3, 150]] },
+    { "id": "np_road_ew", "type": "road_center", "points": [[-150, -3], [150, -3], [150, 3], [-150, 3]] },
+    { "id": "np_fountain", "type": "water", "points": [[-96, 89], [-84, 89], [-84, 101], [-96, 101]] }
+  ],
+  "waypointGraph": {
+    "grid": { "spacing": 10, "min": [-140, -140], "max": [140, 140], "clearance": 0.6 },
+    "doorLinkRadius": 16,
+    "nodes": [],
+    "edges": []
+  }
+}

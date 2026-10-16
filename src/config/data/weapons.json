@@ -1,0 +1,35 @@
+{
+  "pea_gun": {
+    "id": "pea_gun",
+    "displayName": "豌豆枪",
+    "damage": 34,
+    "headshotMultiplier": 2.0,
+    "limbMultiplier": 0.75,
+    "rpm": 240,
+    "magazineSize": 24,
+    "reserveAmmoMax": 240,
+    "reloadTime": 2.0,
+    "range": 80,
+    "falloffMultiplier": 0.5,
+    "baseSpreadDeg": 0.6,
+    "maxSpreadDeg": 3.5,
+    "recoilVerticalDeg": 0.35,
+    "recoilHorizontalDeg": 0.15,
+    "adsFov": 55,
+    "adsMoveMultiplier": 0.6,
+    "hipFov": 90,
+    "spreadPerShotDeg": 0.45,
+    "spreadMoveAddDeg": 0.9,
+    "spreadAirAddDeg": 1.6,
+    "adsSpreadMultiplier": 0.35,
+    "spreadRecoverTime": 0.3,
+    "recoilRecoverTime": 0.3
+  },
+  "ammo_pack": {
+    "id": "ammo_pack",
+    "displayName": "弹药包",
+    "price": 25,
+    "rounds": 48,
+    "refillsReserveDirectly": true
+  }
+}

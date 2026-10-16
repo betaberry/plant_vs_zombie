@@ -1,0 +1,67 @@
+{
+  "loop": { "fixedDt": 0.016666666666666666, "maxSubSteps": 5 },
+  "movement": {
+    "standEyeHeight": 1.7,
+    "crouchEyeHeight": 1.1,
+    "capsuleRadius": 0.35,
+    "capsuleHeight": 1.8,
+    "walkSpeed": 4.5,
+    "sprintMultiplier": 1.6,
+    "crouchMultiplier": 0.5,
+    "jumpSpeed": 5.2,
+    "gravity": -20,
+    "airControl": 0.4,
+    "stepHeight": 0.35,
+    "maxClimbSlopeDeg": 45,
+    "fallRescueY": -20,
+    "bobAmplitude": 0.04,
+    "bobFrequency": 1.8,
+    "landingImpactScale": 0.025,
+    "interactRange": 2.5,
+    "sensitivityDefault": 1.0,
+    "sensitivityMin": 0.2,
+    "sensitivityMax": 3.0
+  },
+  "health": {
+    "lowHealthThreshold": 30,
+    "lowHealthMoveMultiplier": 0.9,
+    "respawnDelay": 3,
+    "invulnerableAfterRespawn": 3,
+    "regenDelay": 10,
+    "regenPerSecond": 2,
+    "regenCapFraction": 0.5
+  },
+  "economy": {
+    "sunCap": 999,
+    "killReward": 10,
+    "headshotBonus": 5,
+    "passiveTickInterval": 0.2,
+    "sunPackAmount": 25,
+    "sunPackLifetime": 30,
+    "sunPackPickupRadius": 1.5
+  },
+  "inventory": { "hotbarSlots": 6 },
+  "spawnDirector": {
+    "globalMaxAlive": 40,
+    "pressureInterval": 180,
+    "pressureRateStep": 0.15,
+    "pressureCapStep": 0.2,
+    "maxPressureLevel": 5,
+    "minSpawnDistance": 15,
+    "defenseThreshold": 3,
+    "defenseRadius": 20,
+    "defenseRateMultiplier": 0.7,
+    "lingerSeconds": 120,
+    "lingerRateMultiplier": 1.5,
+    "evalInterval": 0.5
+  },
+  "ui": { "bannerDuration": 2, "ammoBannerCooldown": 15, "shopAnimTime": 0.15, "floatTextDuration": 1.0 },
+  "audio": { "combatRadius": 25, "combatZombieCount": 3, "crossfadeTime": 2, "maxTotalMB": 10 },
+  "render": {
+    "quality": {
+      "low": { "shadows": false, "shadowMapSize": 0, "particleScale": 0.4, "pixelRatioCap": 1, "drawDistance": 160 },
+      "medium": { "shadows": true, "shadowMapSize": 1024, "particleScale": 0.7, "pixelRatioCap": 1.25, "drawDistance": 260 },
+      "high": { "shadows": true, "shadowMapSize": 2048, "particleScale": 1.0, "pixelRatioCap": 2, "drawDistance": 400 }
+    }
+  }
+}
