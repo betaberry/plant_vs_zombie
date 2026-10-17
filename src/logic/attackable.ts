@@ -10,6 +10,8 @@ export interface DamageInfo {
   from?: Vec3Like | null;
   slow?: { percent: number; duration: number } | null;
   byPlant?: boolean;
+  /** Zone multiplier already included in the amount (gun hits); armour removes it (Revision 2). */
+  zoneMultiplier?: number;
 }
 
 export interface DamageResult {

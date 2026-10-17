@@ -41,6 +41,9 @@ npx vitest run tests/unit/targeting.test.ts
 | `tests/unit/peashooterAI.test.ts` | 豌豆射手索敌 | FR11.3 |
 | `tests/unit/nav.test.ts` | 航点 A* | FR3.4；TR-NAV-03/04 |
 | `tests/unit/spawnDirector.test.ts` | 刷怪导演 | FR12.1 |
+| `tests/unit/zombiePose.test.ts` | 僵尸姿态动画（修订 1、2） | FR5.1；FR-AI-08 前摇 0.3 s；FR-AI-10 死亡姿态；撑杆跳弧线；暴怒切换 |
+| `tests/unit/armor.test.ts` | 护甲结算（修订 2） | 路障 / 铁桶 / 头盔的吸收与溢出；铁门只挡正面 ±60°；爆头倍率不作用于护甲；爆炸同时伤到护甲和本体 |
+| `tests/unit/zombieAbilities.test.ts` | 僵尸特殊能力（修订 2） | 撑杆跳只跳一次并降速；跳跃中不受藤蔓影响；读报僵尸暴怒后提速 |
 
 每个测试文件至少包含一条正常路径用例，并按项目阶段规则覆盖至少两个异常/边界用例。断言必须针对真实计算结果，禁止恒真断言。
 

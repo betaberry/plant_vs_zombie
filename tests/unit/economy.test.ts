@@ -44,9 +44,21 @@ describe('sun economy (FR-SUN)', () => {
     const wallet = createWallet(30, 999);
     expect(spendSun(wallet, 40)).toBe(false);
     expect(wallet.sun).toBe(30);
-    expect(killReward(cfg.game.economy.killReward, cfg.game.economy.headshotBonus, true)).toBe(15);
-    expect(killReward(cfg.game.economy.killReward, cfg.game.economy.headshotBonus, false)).toBe(10);
+    const basic = cfg.zombies.basic_zombie!.sunDrop;
+    expect(killReward(basic, cfg.game.economy.headshotBonus, true)).toBe(15);
+    expect(killReward(basic, cfg.game.economy.headshotBonus, false)).toBe(10);
     expect(passiveRate(15, 0.2)).toBeCloseTo(18, 6);
     expect(displaySun(createWallet(12.6, 999))).toBe(12);
+  });
+
+  it('pays each zombie type its own sunDrop: a buckethead kill earns 25 (Revision 2)', () => {
+    const bonus = cfg.game.economy.headshotBonus;
+    expect(killReward(cfg.zombies.buckethead_zombie!.sunDrop, bonus, false)).toBe(25);
+    // Gun headshot bonus stacks on top of the type reward.
+    expect(killReward(cfg.zombies.buckethead_zombie!.sunDrop, bonus, true)).toBe(30);
+    // Plant kills (never headshots) still pay the type reward.
+    expect(killReward(cfg.zombies.football_zombie!.sunDrop, bonus, false)).toBe(35);
+    // A negative (mis-tuned) drop never takes sun away.
+    expect(killReward(-5, bonus, false)).toBe(0);
   });
 });

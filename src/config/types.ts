@@ -112,6 +112,74 @@ export interface ZombieDef {
   lodFarDistance: number;
   lodMidHz: number;
   targeting: ZombieTargetingDef;
+  /** Revision 2 (multi-type zombies): optional armour / prop that absorbs damage first. */
+  armor?: ZombieArmorDef | null;
+  /** Revision 2: special behaviours (pole vault, newspaper rage, charge). */
+  abilities?: ZombieAbilitiesDef;
+  /** Revision 2: per-type look (accessories, palette overrides, pose style). */
+  visual: ZombieTypeVisualDef;
+}
+
+export type ArmorKind = 'cone' | 'bucket' | 'newspaper' | 'screendoor' | 'helmet';
+/** head: head hits only · body: head + torso · front: every zone, but only from within ±frontAngleDeg of facing. */
+export type ArmorProtects = 'head' | 'body' | 'front';
+export type ZombieAccessory = 'cone' | 'bucket' | 'helmet' | 'shoulderPads' | 'pole' | 'newspaper' | 'screendoor';
+export type ZombiePoseStyle = 'normal' | 'newspaper' | 'screendoor' | 'football' | 'pole';
+
+export interface ZombieArmorDef {
+  kind: ArmorKind;
+  health: number;
+  protects: ArmorProtects;
+  /** Half-angle of the protected front arc (only used by protects = front). */
+  frontAngleDeg: number;
+  /** Accessory dropped as a tumbling prop when the armour breaks (null = shredded, nothing drops). */
+  dropProp: ZombieAccessory | null;
+  /** Accessories removed from the rig when the armour breaks. */
+  parts: ZombieAccessory[];
+  /** Metal armour plays a metallic impact sound. */
+  metal: boolean;
+}
+
+export interface PoleVaultDef {
+  /** Vault when the first plant / nut wall is within this distance (m) ahead while chasing. */
+  triggerRange: number;
+  /** Only plants within ±triggerAngleDeg of the facing direction count as "ahead". */
+  triggerAngleDeg: number;
+  duration: number;
+  /** Landing point distance beyond the plant centre (m). */
+  landingDistance: number;
+  /** Chase speed after the pole is dropped. */
+  speedAfter: number;
+  dropProp: ZombieAccessory;
+}
+
+export interface NewspaperRageDef {
+  /** Seconds of stomping / roaring before the zombie starts running. */
+  rageDuration: number;
+  chaseSpeedAfter: number;
+  wanderSpeedAfter: number;
+}
+
+export interface ChargeDef {
+  /** Charges at chaseSpeed while farther than this from its goal (m). */
+  minDistance: number;
+  /** Speed for the last metres before an attack. */
+  approachSpeed: number;
+}
+
+export interface ZombieAbilitiesDef {
+  poleVault?: PoleVaultDef;
+  newspaperRage?: NewspaperRageDef;
+  charge?: ChargeDef;
+}
+
+export interface ZombieTypeVisualDef {
+  accessories: ZombieAccessory[];
+  poseStyle: ZombiePoseStyle;
+  /** Replaces the global palette for the listed keys (e.g. football jersey colours). */
+  palette?: Partial<Record<ZombiePaletteKey, string[]>>;
+  /** False for types that hold a prop with both hands (no torn-off forearm). */
+  allowMissingArm: boolean;
 }
 
 export type ZombiesConfig = Record<string, ZombieDef>;
@@ -267,6 +335,8 @@ export interface MapConfig {
   buildings: BuildingDef[];
   props: PropDef[];
   zombieSpawners: ZombieSpawnerDef[];
+  /** Revision 2: per-district spawn weights by zombie type id (district id → type id → weight). */
+  districtZombieTypes: Record<string, Record<string, number>>;
   ambushPoints: AmbushPointDef[];
   patrolRoutes: { id: string; waypoints: Vec3Tuple[] }[];
   pickupPoints: PickupPointDef[];
@@ -323,7 +393,6 @@ export interface GameConfig {
   };
   economy: {
     sunCap: number;
-    killReward: number;
     headshotBonus: number;
     passiveTickInterval: number;
     sunPackAmount: number;
@@ -344,10 +413,108 @@ export interface GameConfig {
     lingerSeconds: number;
     lingerRateMultiplier: number;
     evalInterval: number;
+    /** Type used where no district table applies (tutorial zombie, nav break cost reference). */
+    defaultZombieType: string;
+    /** Heavily armoured types whose weight grows with the pressure level. */
+    heavyZombieTypes: string[];
+    /** Heavy type weight × (1 + heavyWeightStep × pressure level). */
+    heavyWeightStep: number;
+    /** Max alive zombies of a type at the same time (types not listed: only the global cap). */
+    zombieTypeCaps: Record<string, number>;
   };
   ui: { bannerDuration: number; ammoBannerCooldown: number; shopAnimTime: number; floatTextDuration: number };
   audio: { combatRadius: number; combatZombieCount: number; crossfadeTime: number; maxTotalMB: number };
   render: { quality: Record<'low' | 'medium' | 'high', QualityPreset> };
+  zombieVisual: ZombieVisualConfig;
+}
+
+/** Body proportions of the zombie rig in metres (scale 1). Head must stay inside zombies.json headHeightRange. */
+export interface ZombieProportions {
+  ankleHeight: number;
+  shinLength: number;
+  thighLength: number;
+  hipHalfWidth: number;
+  spineOffset: number;
+  torsoLength: number;
+  torsoRadius: number;
+  torsoDepthRatio: number;
+  shoulderHalfWidth: number;
+  shoulderDrop: number;
+  neckLength: number;
+  headRadius: number;
+  headCenterOffset: number;
+  upperArmLength: number;
+  forearmLength: number;
+  armRadius: number;
+  legRadius: number;
+}
+
+export type ZombiePaletteKey = 'jacket' | 'shirt' | 'tie' | 'trousers' | 'skin' | 'hair' | 'shoe' | 'teeth' | 'eyes';
+
+/** Procedural animation tunables (angles in degrees, times in seconds, distances in metres). */
+export interface ZombieAnimationConfig {
+  blendTime: number;
+  deathBlendTime: number;
+  strideLength: number;
+  speedSmoothing: number;
+  fullLocomotionSpeed: number;
+  idle: { swayHz: number; swayRollDeg: number; twitchHz: number; twitchDeg: number; chewHz: number; chewOpenDeg: number; armHangDeg: number; elbowBendDeg: number; slouchDeg: number; kneeBendDeg: number };
+  wander: { leanDeg: number; hipSwingDeg: number; kneeBendDeg: number; armSwingDeg: number; elbowBendDeg: number; shoulderTiltDeg: number; dragHipScale: number; dragAnkleDeg: number; pelvisTwistDeg: number; limpDip: number };
+  alert: { headTurnMaxDeg: number; bodyFollow: number; bodyDelay: number; armRaiseDeg: number; jawOpenDeg: number; tremorHz: number; tremorDeg: number; headBackDeg: number };
+  chase: { leanDeg: number; hipSwingDeg: number; kneeBendDeg: number; armReachDeg: number; armBobDeg: number; elbowBendDeg: number; lurchRollDeg: number; jawOpenDeg: number; jawHz: number; headTrackDeg: number; limpScale: number };
+  attack: { readyLeanDeg: number; readyArmDeg: number; windupLeanDeg: number; windupArmDeg: number; windupElbowDeg: number; lungeTime: number; lungeLeanDeg: number; lungeArmDeg: number; lungeElbowDeg: number; lungeDistance: number; jawOpenDeg: number };
+  break: { poundHz: number; armHighDeg: number; armLowDeg: number; elbowHighDeg: number; elbowLowDeg: number; leanDeg: number; slamDip: number; jawOpenDeg: number };
+  hitReact: { peakTime: number; leanBackDeg: number; headWhipDeg: number; twistDeg: number; armFlingDeg: number; pushBack: number };
+  death: { buckleTime: number; fallTime: number; settleTime: number; kneeBuckleDeg: number; forwardChance: number; bounceDeg: number; groundLift: number; armFlingDeg: number };
+  ambush: { crouchHipDeg: number; crouchKneeDeg: number; crouchLeanDeg: number; riseTime: number; breathHz: number; breathDeg: number };
+  rooted: { struggleHz: number; twistDeg: number; armFlailDeg: number; leanDeg: number; fadeRate: number };
+  /** Revision 2: pole vault (phases are fractions of the vault duration, driven by the gameplay vault progress). */
+  vault: {
+    plantEnd: number; flightEnd: number; arcHeight: number; carryArmDeg: number; carryElbowDeg: number;
+    plantArmDeg: number; plantLeanDeg: number; tuckHipDeg: number; tuckKneeDeg: number; flightPitchDeg: number;
+    landKneeDeg: number; landLeanDeg: number;
+  };
+  /** Revision 2: newspaper rage (stomp + roar) and the raged run. */
+  rage: {
+    stompHz: number; stompHipDeg: number; stompKneeDeg: number; roarJawDeg: number; roarBackDeg: number;
+    fistShakeHz: number; fistShakeDeg: number; armDownDeg: number; elbowDeg: number; runHipScale: number; runArmPumpDeg: number;
+  };
+  newspaper: { armDeg: number; elbowDeg: number; headDownDeg: number; pageTurnHz: number; pageTurnDeg: number };
+  screendoor: { armDeg: number; elbowDeg: number; leanDeg: number };
+  charge: { leanDeg: number; headDownDeg: number; armDeg: number; elbowDeg: number; hipSwingScale: number };
+  /** Head flinch multiplier when the hit landed on armour. */
+  armorHitHeadScale: number;
+}
+
+/** Rendering of dropped armour props (tumble, rest, fade). */
+export interface DroppedPropConfig {
+  maxActive: number;
+  restSeconds: number;
+  fadeSeconds: number;
+  launchSpeed: number;
+  spinSpeed: number;
+  gravity: number;
+  /** Fraction of the vertical speed kept on each ground bounce (0..1). */
+  bounce: number;
+}
+
+export interface ZombieVisualConfig {
+  cullDistance: number;
+  proportions: ZombieProportions;
+  segments: { radial: number; sphereWidth: number; sphereHeight: number; lathe: number };
+  variation: {
+    heightScale: [number, number];
+    buildScale: [number, number];
+    missingArmChance: number;
+    headTiltChance: number;
+    headTiltMaxDeg: number;
+    limpChance: number;
+  };
+  palettes: Record<ZombiePaletteKey, string[]>;
+  /** Revision 2: base colours of armour / prop accessories (baked into the accessory vertex colours). */
+  accessoryColors: Record<ZombieAccessory, string>;
+  droppedProps: DroppedPropConfig;
+  animation: ZombieAnimationConfig;
 }
 
 export interface AllConfig {

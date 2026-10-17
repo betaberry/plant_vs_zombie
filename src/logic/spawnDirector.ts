@@ -74,6 +74,50 @@ export function spawnBlockReason(sp: SpawnerInfo, totalAlive: number, state: Dir
   return null;
 }
 
+// ---------- zombie type selection (Revision 2, plan Step 26) ----------
+
+/**
+ * Effective spawn weights for a district at a pressure level: the district table from the map,
+ * heavy types scaled by (1 + heavyWeightStep × level). Falls back to the default type when the
+ * district has no table.
+ */
+export function zombieTypeWeights(district: string | null, level: number, table: Record<string, Record<string, number>>, cfg: DirectorCfg): Record<string, number> {
+  const base = district !== null ? table[district] : undefined;
+  if (!base) return { [cfg.defaultZombieType]: 1 };
+  const heavy = new Set(cfg.heavyZombieTypes);
+  const out: Record<string, number> = {};
+  for (const [type, w] of Object.entries(base)) {
+    out[type] = heavy.has(type) ? w * (1 + cfg.heavyWeightStep * level) : w;
+  }
+  return out;
+}
+
+/** True when another zombie of this type may spawn (per-type alive cap; unlisted types have none). */
+export function typeUnderCap(type: string, aliveByType: Readonly<Record<string, number>>, cfg: DirectorCfg): boolean {
+  const cap = cfg.zombieTypeCaps[type];
+  return cap === undefined || (aliveByType[type] ?? 0) < cap;
+}
+
+/**
+ * Weighted pick among the types still under their cap. `roll` is a uniform number in [0, 1)
+ * from the seeded PRNG. Returns null when every candidate is capped.
+ */
+export function chooseZombieType(
+  district: string | null, level: number, aliveByType: Readonly<Record<string, number>>,
+  table: Record<string, Record<string, number>>, cfg: DirectorCfg, roll: number,
+): string | null {
+  const weights = Object.entries(zombieTypeWeights(district, level, table, cfg))
+    .filter(([type, w]) => w > 0 && typeUnderCap(type, aliveByType, cfg));
+  const total = weights.reduce((s, [, w]) => s + w, 0);
+  if (total <= 0) return null;
+  let acc = roll * total;
+  for (const [type, w] of weights) {
+    acc -= w;
+    if (acc < 0) return type;
+  }
+  return weights[weights.length - 1]![0];
+}
+
 /** Advances the director; returns the ids of spawners that should spawn one zombie now. */
 export function stepDirector(state: DirectorState, ctx: DirectorContext, cfg: DirectorCfg, dt: number): string[] {
   state.elapsed += dt;

@@ -33,7 +33,6 @@
   },
   "economy": {
     "sunCap": 999,
-    "killReward": 10,
     "headshotBonus": 5,
     "passiveTickInterval": 0.2,
     "sunPackAmount": 25,
@@ -53,7 +52,18 @@
     "defenseRateMultiplier": 0.7,
     "lingerSeconds": 120,
     "lingerRateMultiplier": 1.5,
-    "evalInterval": 0.5
+    "evalInterval": 0.5,
+    "defaultZombieType": "basic_zombie",
+    "heavyZombieTypes": ["buckethead_zombie", "screendoor_zombie", "football_zombie"],
+    "heavyWeightStep": 0.25,
+    "zombieTypeCaps": {
+      "conehead_zombie": 10,
+      "buckethead_zombie": 6,
+      "pole_vaulter_zombie": 6,
+      "newspaper_zombie": 8,
+      "screendoor_zombie": 6,
+      "football_zombie": 4
+    }
   },
   "ui": { "bannerDuration": 2, "ammoBannerCooldown": 15, "shopAnimTime": 0.15, "floatTextDuration": 1.0 },
   "audio": { "combatRadius": 25, "combatZombieCount": 3, "crossfadeTime": 2, "maxTotalMB": 10 },
@@ -62,6 +72,81 @@
       "low": { "shadows": false, "shadowMapSize": 0, "particleScale": 0.4, "pixelRatioCap": 1, "drawDistance": 160 },
       "medium": { "shadows": true, "shadowMapSize": 1024, "particleScale": 0.7, "pixelRatioCap": 1.25, "drawDistance": 260 },
       "high": { "shadows": true, "shadowMapSize": 2048, "particleScale": 1.0, "pixelRatioCap": 2, "drawDistance": 400 }
+    }
+  },
+  "zombieVisual": {
+    "cullDistance": 200,
+    "proportions": {
+      "ankleHeight": 0.07,
+      "shinLength": 0.4,
+      "thighLength": 0.43,
+      "hipHalfWidth": 0.1,
+      "spineOffset": 0.08,
+      "torsoLength": 0.47,
+      "torsoRadius": 0.22,
+      "torsoDepthRatio": 0.62,
+      "shoulderHalfWidth": 0.25,
+      "shoulderDrop": 0.07,
+      "neckLength": 0.09,
+      "headRadius": 0.155,
+      "headCenterOffset": 0.12,
+      "upperArmLength": 0.29,
+      "forearmLength": 0.26,
+      "armRadius": 0.06,
+      "legRadius": 0.085
+    },
+    "segments": { "radial": 10, "sphereWidth": 16, "sphereHeight": 12, "lathe": 14 },
+    "variation": {
+      "heightScale": [0.95, 1.05],
+      "buildScale": [0.9, 1.15],
+      "missingArmChance": 0.18,
+      "headTiltChance": 0.35,
+      "headTiltMaxDeg": 16,
+      "limpChance": 0.6
+    },
+    "palettes": {
+      "jacket": ["#6d4c41", "#795548", "#5d4037", "#7b5e3b", "#55606e"],
+      "shirt": ["#f1ead2", "#e8e2c8", "#d9d4bd"],
+      "tie": ["#c62828", "#b71c1c", "#d84315"],
+      "trousers": ["#4e342e", "#3e2723", "#5d4a3a", "#37474f"],
+      "skin": ["#9cb88a", "#a8c49a", "#8fae7c", "#b2c79a"],
+      "hair": ["#3e2f28", "#2b2522", "#5a4a3a"],
+      "shoe": ["#3b2a20", "#2d211b"],
+      "teeth": ["#efe6c8", "#e3d6a8"],
+      "eyes": ["#fffde7", "#f5f0d0"]
+    },
+    "accessoryColors": {
+      "cone": "#f57c00",
+      "bucket": "#9aa4ab",
+      "helmet": "#b71c1c",
+      "shoulderPads": "#d32f2f",
+      "pole": "#a1887f",
+      "newspaper": "#ece8dc",
+      "screendoor": "#8f9aa1"
+    },
+    "droppedProps": { "maxActive": 16, "restSeconds": 2, "fadeSeconds": 0.6, "launchSpeed": 2.5, "spinSpeed": 6, "gravity": -15, "bounce": 0.35 },
+    "animation": {
+      "blendTime": 0.2,
+      "deathBlendTime": 0.15,
+      "strideLength": 1.1,
+      "speedSmoothing": 10,
+      "fullLocomotionSpeed": 0.6,
+      "idle": { "swayHz": 0.35, "swayRollDeg": 3, "twitchHz": 0.7, "twitchDeg": 9, "chewHz": 2.2, "chewOpenDeg": 12, "armHangDeg": 10, "elbowBendDeg": 18, "slouchDeg": 10, "kneeBendDeg": 8 },
+      "wander": { "leanDeg": 12, "hipSwingDeg": 20, "kneeBendDeg": 38, "armSwingDeg": 14, "elbowBendDeg": 22, "shoulderTiltDeg": 7, "dragHipScale": 0.45, "dragAnkleDeg": 25, "pelvisTwistDeg": 7, "limpDip": 0.03 },
+      "alert": { "headTurnMaxDeg": 70, "bodyFollow": 0.35, "bodyDelay": 0.25, "armRaiseDeg": 60, "jawOpenDeg": 32, "tremorHz": 9, "tremorDeg": 2.5, "headBackDeg": 14 },
+      "chase": { "leanDeg": 20, "hipSwingDeg": 30, "kneeBendDeg": 55, "armReachDeg": 82, "armBobDeg": 9, "elbowBendDeg": 12, "lurchRollDeg": 4, "jawOpenDeg": 22, "jawHz": 3, "headTrackDeg": 40, "limpScale": 0.7 },
+      "attack": { "readyLeanDeg": 10, "readyArmDeg": 70, "windupLeanDeg": -16, "windupArmDeg": 150, "windupElbowDeg": 75, "lungeTime": 0.12, "lungeLeanDeg": 26, "lungeArmDeg": 72, "lungeElbowDeg": 8, "lungeDistance": 0.18, "jawOpenDeg": 34 },
+      "break": { "poundHz": 2.4, "armHighDeg": 150, "armLowDeg": 45, "elbowHighDeg": 60, "elbowLowDeg": 10, "leanDeg": 16, "slamDip": 0.03, "jawOpenDeg": 20 },
+      "hitReact": { "peakTime": 0.04, "leanBackDeg": 16, "headWhipDeg": 24, "twistDeg": 14, "armFlingDeg": 18, "pushBack": 0.05 },
+      "death": { "buckleTime": 0.35, "fallTime": 0.55, "settleTime": 0.25, "kneeBuckleDeg": 60, "forwardChance": 0.5, "bounceDeg": 6, "groundLift": 0.13, "armFlingDeg": 55 },
+      "ambush": { "crouchHipDeg": 70, "crouchKneeDeg": 120, "crouchLeanDeg": 35, "riseTime": 0.6, "breathHz": 0.5, "breathDeg": 2 },
+      "rooted": { "struggleHz": 3.2, "twistDeg": 18, "armFlailDeg": 35, "leanDeg": 8, "fadeRate": 8 },
+      "vault": { "plantEnd": 0.22, "flightEnd": 0.8, "arcHeight": 1.3, "carryArmDeg": 45, "carryElbowDeg": 55, "plantArmDeg": 70, "plantLeanDeg": 22, "tuckHipDeg": 75, "tuckKneeDeg": 95, "flightPitchDeg": 15, "landKneeDeg": 50, "landLeanDeg": 30 },
+      "rage": { "stompHz": 3.5, "stompHipDeg": 35, "stompKneeDeg": 60, "roarJawDeg": 40, "roarBackDeg": 18, "fistShakeHz": 7, "fistShakeDeg": 14, "armDownDeg": 20, "elbowDeg": 80, "runHipScale": 1.4, "runArmPumpDeg": 40 },
+      "newspaper": { "armDeg": 62, "elbowDeg": 78, "headDownDeg": 16, "pageTurnHz": 0.25, "pageTurnDeg": 12 },
+      "screendoor": { "armDeg": 80, "elbowDeg": 35, "leanDeg": 8 },
+      "charge": { "leanDeg": 38, "headDownDeg": 22, "armDeg": 25, "elbowDeg": 95, "hipSwingScale": 1.25 },
+      "armorHitHeadScale": 1.8
     }
   }
 }

@@ -4,7 +4,7 @@ import type { Vec3Like } from './events';
 
 export type GameCommand =
   | { type: 'damage'; target: IAttackable; amount: number; info: DamageInfo }
-  | { type: 'spawn'; spawnerId: string | null; pos: Vec3Like; ambush: boolean; patrolRoute?: string }
+  | { type: 'spawn'; spawnerId: string | null; pos: Vec3Like; ambush: boolean; patrolRoute?: string; zombieType?: string }
   | { type: 'plant'; plantType: string; pos: Vec3Like; yaw: number }
   | { type: 'shovel'; plantId: string }
   | { type: 'pickup'; pickupId: string }

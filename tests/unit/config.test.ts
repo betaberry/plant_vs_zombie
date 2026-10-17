@@ -43,6 +43,34 @@ describe('validateConfig (TR-CFG-01/02/05)', () => {
     expect(errors.some((e) => e.includes('ghost'))).toBe(true);
   });
 
+  it('rejects a zombie type whose chase speed is not below the player walk speed (D-29)', () => {
+    const raw = rawConfig();
+    const walk = (raw.game as AnyObj).movement.walkSpeed;
+    (raw.zombies as AnyObj).football_zombie.chaseSpeed = walk;
+    const errors = validateConfig(raw);
+    expect(errors.some((e) => e.includes('football_zombie') && e.includes('D-29'))).toBe(true);
+  });
+
+  it('rejects ability speeds at or above the player walk speed too (raged newspaper zombie)', () => {
+    const raw = rawConfig();
+    (raw.zombies as AnyObj).newspaper_zombie.abilities.newspaperRage.chaseSpeedAfter = 5;
+    const errors = validateConfig(raw);
+    expect(errors.some((e) => e.includes('newspaper_zombie') && e.includes('D-29'))).toBe(true);
+  });
+
+  it('rejects incomplete armour, unknown spawn types and bad spawn weights', () => {
+    const raw = rawConfig();
+    delete (raw.zombies as AnyObj).buckethead_zombie.armor.protects;
+    (raw.map as AnyObj).zombieSpawners[0].type = 'ghost_zombie';
+    (raw.map as AnyObj).districtZombieTypes.start = { basic_zombie: -1, imp_zombie: 0 };
+    const errors = validateConfig(raw);
+    expect(errors.some((e) => e.includes('buckethead_zombie.armor.protects'))).toBe(true);
+    expect(errors.some((e) => e.includes('ghost_zombie'))).toBe(true);
+    expect(errors.some((e) => e.includes('districtZombieTypes.start') && e.includes('imp_zombie'))).toBe(true);
+    expect(errors.some((e) => e.includes('districtZombieTypes.start.basic_zombie') && e.includes('不能为负'))).toBe(true);
+    expect(errors.some((e) => e.includes('districtZombieTypes.start') && e.includes('总和'))).toBe(true);
+  });
+
   it('counts only enabled hotbar categories per character', () => {
     const items = (rawConfig().shop as AnyObj).items as ShopItem[];
     expect(hotbarKindsFor('pea_gunner', items).sort()).toEqual(

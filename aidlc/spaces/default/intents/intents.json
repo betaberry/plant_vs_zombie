@@ -6,5 +6,13 @@
     "scope": "express",
     "status": "in-flight",
     "request": "028ffbf8"
+  },
+  {
+    "uuid": "01a14804-d8fc-7030-9379-31b311468c7b",
+    "slug": "guard-mode",
+    "dirName": "261017-guard-mode",
+    "scope": "express",
+    "status": "in-flight",
+    "request": "40b30ead"
   }
 ]

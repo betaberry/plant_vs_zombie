@@ -14,7 +14,7 @@ import { canPlantAt, type PlantCheck } from '../logic/planting';
 import { createPotionState, drinkPotion, tickPotion, type PotionState } from '../logic/potions';
 import { writeSave, type SaveData, type StorageLike } from '../logic/save';
 import { purchase, type PurchaseResult, type ShopContext } from '../logic/shop';
-import { createDirectorState, stepDirector, type DirectorState } from '../logic/spawnDirector';
+import { chooseZombieType, createDirectorState, pressureLevel, stepDirector, type DirectorState } from '../logic/spawnDirector';
 import type { NavGraph } from '../nav/graph';
 import { castRay, hasLineOfSight, probeGround } from '../physics/raycast';
 import type { PhysicsWorld } from '../physics/world';
@@ -167,7 +167,7 @@ export class Session {
     c.register('damage', (cmd) => cmd.target.applyDamage(cmd.amount, cmd.info));
     c.register('spawn', (cmd) => {
       const patrol = cmd.patrolRoute ? store.config.map.patrolRoutes.find((r) => r.id === cmd.patrolRoute)?.waypoints.map(([x, y, z]) => ({ x, y, z })) ?? null : null;
-      return this.zombies.spawn(cmd.pos, { ambush: cmd.ambush, spawnerId: cmd.spawnerId, patrol }) !== null;
+      return this.zombies.spawn(cmd.pos, { ambush: cmd.ambush, spawnerId: cmd.spawnerId, patrol, typeId: cmd.zombieType }) !== null;
     });
     c.register('plant', (cmd) => {
       const def = store.config.plants.plants[cmd.plantType];
@@ -203,7 +203,9 @@ export class Session {
         const eco = store.config.game.economy;
         this.kills++;
         this.life.kills++;
-        this.gainSun(killReward(eco.killReward, eco.headshotBonus, e.headshot), true);
+        // Per-type sunDrop (Revision 2); plant kills pay out too, headshot bonus only for gun headshots.
+        const typeName = store.config.zombies[e.typeId]?.displayName ?? '';
+        this.gainSun(killReward(e.sunDrop, eco.headshotBonus, e.headshot), true, (n) => S.killFloat(n, typeName));
         this.particles.emit('sun', { x: e.pos.x, y: e.pos.y + 1, z: e.pos.z });
         if (e.headshot) ev.emit('banner', { text: S.bannerHeadshot, kind: 'info' });
       }),
@@ -225,14 +227,14 @@ export class Session {
     store.events.emit('banner', { text: S.bannerAmmoOut, kind: 'danger' });
   }
 
-  private gainSun(amount: number, showFloat: boolean): void {
+  private gainSun(amount: number, showFloat: boolean, floatText: (applied: number) => string = (n) => `+${n}`): void {
     const before = displaySun(this.wallet);
     const res = addSun(this.wallet, amount);
     this.stats.sunEarned += res.applied;
     this.life.sun += res.applied;
     const after = displaySun(this.wallet);
     if (after !== before || res.capped) store.events.emit('sunChanged', { sun: after, delta: after - before, capped: res.capped });
-    if (showFloat && res.applied > 0) store.events.emit('floatText', { text: `+${Math.round(res.applied)}`, kind: 'gain' });
+    if (showFloat && res.applied > 0) store.events.emit('floatText', { text: floatText(Math.round(res.applied)), kind: 'gain' });
     if (res.capped && showFloat) store.events.emit('banner', { text: S.bannerSunFull, kind: 'info' });
   }
 
@@ -548,10 +550,17 @@ export class Session {
         return frustum.containsPoint(head) && hasLineOfSight(this.d.phys, cam.position, head);
       },
     }, cfg.game.spawnDirector, dt);
+    if (ids.length === 0) return;
+    // Zombie type per spawn (Revision 2): district table × pressure, per-type alive caps.
+    const level = pressureLevel(this.director.elapsed, cfg.game.spawnDirector);
+    const aliveByType = this.zombies.aliveByType();
     for (const id of ids) {
       const def = cfg.map.zombieSpawners.find((s) => s.id === id)!;
-      const spPos = spawners.find((s) => s.id === id)!.pos;
-      this.commands.dispatch({ type: 'spawn', spawnerId: id, pos: spPos, ambush: def.mode === 'indoor', patrolRoute: def.patrolRoute });
+      const sp = spawners.find((s) => s.id === id)!;
+      const zombieType = chooseZombieType(sp.district || null, level, aliveByType, cfg.map.districtZombieTypes, cfg.game.spawnDirector, this.rng.next());
+      if (zombieType === null) continue;
+      aliveByType[zombieType] = (aliveByType[zombieType] ?? 0) + 1;
+      this.commands.dispatch({ type: 'spawn', spawnerId: id, pos: sp.pos, ambush: def.mode === 'indoor', patrolRoute: def.patrolRoute, zombieType });
     }
   }
 
@@ -588,7 +597,7 @@ export class Session {
     const p = this.player;
     p.updateCamera(alpha, frameDt);
     this.d.renderer.followShadows(p.camera.position.x, p.camera.position.z);
-    this.zombies.render(alpha, p.camera.position);
+    this.zombies.render(alpha, p.camera.position, frameDt);
     this.plants.render();
     this.pickups.render();
     this.particles.scale = this.d.renderer.particleScale;
@@ -651,7 +660,7 @@ export class Session {
 
   dispose(): void {
     this.disposers.forEach((f) => f());
-    this.zombies.clear();
+    this.zombies.dispose();
     this.plants.clear();
     this.d.phys.removeBody(this.player.body);
     this.d.phys.removeBody(this.dummy.body);

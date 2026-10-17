@@ -383,7 +383,7 @@ export class Hud {
     for (const l of list) {
       v.set(l.pos.x, l.pos.y, l.pos.z).project(camera);
       if (v.z > 1 || v.z < -1) continue;
-      const d = el('div', { class: l.kind === 'break' ? 'break' : '' }, l.kind === 'break' ? S.breakIcon : l.text);
+      const d = el('div', { class: l.kind === 'break' ? 'break' : '' }, l.kind === 'break' ? S.breakIcon : S.zombieLabel(l.typeName, l.text));
       d.style.left = `${(v.x * 0.5 + 0.5) * 100}%`;
       d.style.top = `${(-v.y * 0.5 + 0.5) * 100}%`;
       this.labels.append(d);
@@ -404,7 +404,8 @@ export class Hud {
       `FPS ${this.loop.fps}`,
       `逻辑 ${this.loop.lastUpdateMs.toFixed(2)} ms · 渲染 ${this.loop.lastRenderMs.toFixed(2)} ms · 物理 ${s.player ? this.physMs().toFixed(2) : '0'} ms`,
       `Draw Call ${st.drawCalls} · 三角面 ${st.triangles}`,
-      `实体：僵尸 ${s.zombies.aliveCount} · 植物 ${s.plants.total}`,
+      `实体：僵尸 ${s.zombies.aliveCount} · 植物 ${s.plants.total} · ${S.debugDroppedProps(s.zombies.droppedPropCount)}`,
+      `僵尸 Draw Call ${s.zombies.drawCalls}`,
       `僵尸状态：${Object.entries(states).map(([k, n]) => `${k}×${n}`).join(' ') || '-'}`,
       `坐标 ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} · ${s.player.grounded ? '着地' : '空中'}${s.isInsideBuilding() ? ' · 室内' : ''}`,
       `航点 ${this.nav.nodes.length} · ${S.debugDisconnected(disconnected)}`,

@@ -55,8 +55,12 @@ export function tickInterval(t: IntervalTicker, dt: number, interval: number, pe
   return produced;
 }
 
-export function killReward(killReward: number, headshotBonus: number, headshot: boolean): number {
-  return killReward + (headshot ? headshotBonus : 0);
+/**
+ * Kill reward (Revision 2): the killed type's `sunDrop` (plant kills included) plus the headshot
+ * bonus for gun headshots.
+ */
+export function killReward(sunDrop: number, headshotBonus: number, headshot: boolean): number {
+  return Math.max(0, sunDrop) + (headshot ? headshotBonus : 0);
 }
 
 /** Passive rate including the permanent 「阳光增效」 bonus. */

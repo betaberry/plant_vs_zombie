@@ -7,7 +7,7 @@ import type { Rng } from '../core/rng';
 import { store } from '../core/store';
 import { cancelReload, createAmmo, reserveEmpty, startReload, tickReload, tryFire, type AmmoState } from '../logic/ammo';
 import type { IAttackable } from '../logic/attackable';
-import { computeGunDamage } from '../logic/damage';
+import { computeGunDamage, zoneMultiplier } from '../logic/damage';
 import { classifyHitZone, type HitZoneDef } from '../logic/hitzone';
 import { DEG } from '../logic/math';
 import { potionDamageMultiplier, potionSlow, type PotionState } from '../logic/potions';
@@ -24,6 +24,8 @@ export interface ShootTarget extends IAttackable {
   localHit(point: Vec3Like): { localY: number; lateral: number };
   hitZoneDef(): HitZoneDef;
   ignoresRays(): boolean;
+  /** Revision 2: whether the last applied hit landed on metal / soft armour (impact sound + sparks). */
+  lastArmorHit?(): 'metal' | 'soft' | null;
 }
 
 export interface WeaponDeps {
@@ -151,10 +153,11 @@ export class PeaGun {
     });
     const res = this.deps.commands.dispatch({
       type: 'damage', target, amount: dmg,
-      info: { source: 'gun', zone, from: this.deps.player.position(), slow: ice },
+      info: { source: 'gun', zone, zoneMultiplier: zoneMultiplier(zone, this.gun), from: this.deps.player.position(), slow: ice },
     });
-    this.deps.particles.emit(ice ? 'frost' : 'pea_juice', point);
-    store.events.emit('zombieHit', { pos: point, zone, damage: res.applied, ice: ice !== null });
+    const armor = target.lastArmorHit?.() ?? null;
+    this.deps.particles.emit(armor === 'metal' ? 'dust' : ice ? 'frost' : 'pea_juice', point);
+    store.events.emit('zombieHit', { pos: point, zone, damage: res.applied, ice: ice !== null, armor });
     store.events.emit('hitMarker', { kill: res.killed });
   }
 }

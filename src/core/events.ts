@@ -8,8 +8,18 @@ export interface GameEvents {
   floatText: { text: string; kind: 'gain' | 'spend' | 'info' | 'warn' };
   banner: { text: string; kind?: 'info' | 'warn' | 'danger' };
   hitMarker: { kill: boolean };
-  zombieHit: { pos: Vec3Like; zone: HitZone; damage: number; ice: boolean };
-  zombieKilled: { pos: Vec3Like; headshot: boolean; byPlant: boolean };
+  /** armor: the bullet landed on armour (metal → clank instead of the flesh sound). */
+  zombieHit: { pos: Vec3Like; zone: HitZone; damage: number; ice: boolean; armor?: 'metal' | 'soft' | null };
+  /** typeId / sunDrop: Revision 2 per-type kill reward (plant kills included). */
+  zombieKilled: { pos: Vec3Like; headshot: boolean; byPlant: boolean; typeId: string; sunDrop: number };
+  /** Revision 2 (Step 28): a hit landed on armour; metal armour clanks. */
+  armorHit: { pos: Vec3Like; kind: string; metal: boolean; source: string };
+  /** Revision 2 (Step 28): a newspaper zombie lost its paper and roars. */
+  zombieRage: { pos: Vec3Like };
+  /** Revision 2 (Step 28): a dropped armour prop hit the ground for the first time. */
+  propLanded: { pos: Vec3Like; metal: boolean };
+  /** Revision 2: a zombie's armour (cone, bucket, newspaper, screen door, helmet) was destroyed. */
+  armorBroken: { pos: Vec3Like; zombieId: string; typeId: string; kind: string; dropProp: string | null; metal: boolean };
   playerHurt: { amount: number; from: Vec3Like | null };
   playerDied: Record<string, never>;
   playerRespawned: Record<string, never>;

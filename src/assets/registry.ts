@@ -14,7 +14,7 @@ export type SynthRecipe =
   | 'reload_1' | 'reload_2' | 'reload_3' | 'zombie_groan' | 'zombie_attack' | 'footstep' | 'plant_dig'
   | 'plant_grow' | 'plant_destroyed' | 'shovel_pull' | 'plant_fire' | 'explosion' | 'potion' | 'potion_replace'
   | 'hurt' | 'death' | 'heartbeat' | 'kill_confirm' | 'ui_click' | 'ui_buy' | 'ui_error' | 'ui_open' | 'ui_close'
-  | 'pickup' | 'vine';
+  | 'pickup' | 'vine' | 'armor_metal' | 'metal_clang' | 'zombie_roar';
 
 const A = (base: string): string => `assets/audio/${base}.ogg`;
 
@@ -29,6 +29,10 @@ export const AUDIO_ASSETS: Record<string, AudioAsset> = {
   hit_wood: { files: [A('impactWood_light_000'), A('impactWood_light_001')], synth: 'hit_world', volume: 0.45 },
   hit_soft: { files: [A('impactSoft_medium_000'), A('impactSoft_medium_001')], synth: 'hit_soft', volume: 0.5 },
   nut_hit: { files: [A('impactPlank_medium_000')], synth: 'hit_world', volume: 0.6 },
+  // Revision 2 (Step 28): bucket / screen door / helmet hits, dropped metal props, newspaper rage.
+  hit_armor_metal: { files: [A('impactMetal_light_000'), A('impactMetal_light_001')], synth: 'armor_metal', volume: 0.6 },
+  prop_metal_clang: { files: [], synth: 'metal_clang', volume: 0.6 },
+  zombie_roar: { files: [], synth: 'zombie_roar', volume: 0.8 },
   dry_mag: { files: [A('tick_002')], synth: 'dry_mag', volume: 0.7 },
   dry_reserve: { files: [A('switch_002')], synth: 'dry_reserve', volume: 0.8 },
   reload_1: { files: [A('toggle_001')], synth: 'reload_1', volume: 0.6 },

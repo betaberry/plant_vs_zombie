@@ -69,12 +69,40 @@ out.push(table(['id', '名称', '分类', '价格', '携带上限', '可购买�
 out.push('');
 out.push('## 全局参数（game.json）');
 out.push('');
-for (const [section, values] of Object.entries(game)) {
+const { zombieVisual, ...gameSections } = game;
+for (const [section, values] of Object.entries(gameSections)) {
   out.push(`### ${section}`);
   out.push('');
   out.push(section === 'render' ? table(['画质', '阴影', '阴影贴图', '粒子倍率', '像素比上限', '可视距离'],
     Object.entries(values.quality).map(([k, q]) => [k, q.shadows, q.shadowMapSize, q.particleScale, q.pixelRatioCap, q.drawDistance])) : kv(values));
   out.push('');
+}
+if (zombieVisual) {
+  out.push('## 僵尸外观与动作（game.json → zombieVisual）');
+  out.push('');
+  out.push(`剔除距离 cullDistance：${zombieVisual.cullDistance} m`);
+  out.push('');
+  for (const key of ['proportions', 'segments', 'variation']) {
+    out.push(`### ${key}`);
+    out.push('');
+    out.push(kv(zombieVisual[key]));
+    out.push('');
+  }
+  out.push('### palettes');
+  out.push('');
+  out.push(table(['部位', '颜色'], Object.entries(zombieVisual.palettes)));
+  out.push('');
+  const { idle, wander, alert, chase, attack, break: brk, hitReact, death, ambush, rooted, ...blend } = zombieVisual.animation;
+  out.push('### animation（角度单位：度；时间单位：秒）');
+  out.push('');
+  out.push(kv(blend));
+  out.push('');
+  for (const [name, values] of Object.entries({ idle, wander, alert, chase, attack, break: brk, hitReact, death, ambush, rooted })) {
+    out.push(`#### ${name}`);
+    out.push('');
+    out.push(kv(values));
+    out.push('');
+  }
 }
 
 const target = join(root, 'docs', '数值表.md');

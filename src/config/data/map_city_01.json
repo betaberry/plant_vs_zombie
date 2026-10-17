@@ -8,6 +8,12 @@
     { "id": "residential", "name": "住宅区", "rect": [-150, -150, 0, 0] },
     { "id": "industrial", "name": "工业区", "rect": [0, -150, 150, 0] }
   ],
+  "districtZombieTypes": {
+    "start": { "basic_zombie": 8, "conehead_zombie": 3 },
+    "commercial": { "basic_zombie": 6, "conehead_zombie": 3, "pole_vaulter_zombie": 2, "newspaper_zombie": 2 },
+    "residential": { "basic_zombie": 6, "conehead_zombie": 3, "newspaper_zombie": 2, "screendoor_zombie": 2 },
+    "industrial": { "basic_zombie": 5, "conehead_zombie": 3, "pole_vaulter_zombie": 1, "buckethead_zombie": 2, "football_zombie": 1 }
+  },
   "highValueAreas": [
     { "id": "hv_warehouse", "name": "仓库区", "rect": [80, -140, 140, -85] },
     { "id": "hv_supermarket", "name": "超市", "rect": [60, 28, 92, 52] }

@@ -151,7 +151,7 @@ export const S = {
   tutorialGunner: [
     '用 W A S D 移动，按住 Shift 冲刺。点击画面锁定鼠标。',
     '左键开火，右键开镜。试试打前面的训练假人——打头伤害翻倍！',
-    '去找一只僵尸并击杀它，每次击杀 +10 阳光。',
+    '去找一只僵尸并击杀它：普通僵尸 +10 阳光，戴路障、铁桶的僵尸给得更多。',
     '按 B 打开商店，买一颗「太阳花苗种子」（50 阳光）。',
     '按数字键选中种子，对准 6 米内的绿色地面左键种下。',
     '太阳花苗每秒产出 4 阳光。注意：带着僵尸路过 3 米内，它会被顺手拆掉！',
@@ -169,6 +169,11 @@ export const S = {
   debugTitle: '调试面板（F3）',
   debugDisconnected: (n: number) => `不连通航点：${n}`,
   breakIcon: '🔨 拆墙',
+  /** F4 label: zombie type name + gameplay state (Revision 2). */
+  zombieLabel: (typeName: string, state: string) => `${typeName} · ${state}（${zombieStateNames[state] ?? state}）`,
+  /** Kill float: sun gained for this zombie type (Revision 2). */
+  killFloat: (sun: number, typeName: string) => (typeName ? `+${sun} ☀ ${typeName}` : `+${sun} ☀`),
+  debugDroppedProps: (n: number) => `掉落道具 ${n}`,
 
   minimapTitle: '小地图',
   characterIcons: { pea_gunner: '🌱', sunflower: '🌻' } as Record<string, string>,
@@ -178,6 +183,12 @@ export const S = {
     speed_shoes: '👟', pea_gun_upgrade: '🔫', sun_boost: '☀️', sun_pack: '☀️',
   } as Record<string, string>,
 } as const;
+
+/** Chinese names of the zombie states shown with F4. */
+export const zombieStateNames: Record<string, string> = {
+  IDLE: '发呆', WANDER: '游荡', ALERT: '警觉', CHASE: '追击', ATTACK: '攻击', AMBUSH: '埋伏', BREAK: '拆墙',
+  HIT_REACT: '受击', DEAD: '倒下', VAULT: '撑杆跳', RAGE: '暴怒',
+};
 
 export function formatDuration(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));

@@ -7,7 +7,11 @@ import type {
   PlantDef,
   PlantsConfig,
   ShopItem,
+  ZombieDef,
+  ZombieVisualConfig,
 } from './types';
+import { deathDuration, headCenterHeight } from '../logic/zombiePose';
+import { allMoveSpeeds } from '../logic/zombieAbilities';
 
 export interface RawConfig {
   characters: unknown;
@@ -183,6 +187,199 @@ function validateMap(errors: string[], map: MapConfig, zombieIds: Set<string>, s
   if (!map.waypointGraph?.grid) errors.push('map.waypointGraph.grid: 缺失');
 }
 
+const ZOMBIE_PALETTES = ['jacket', 'shirt', 'tie', 'trousers', 'skin', 'hair', 'shoe', 'teeth', 'eyes'];
+/** Plan Step 24: state cross-fades must stay within 0.15–0.25 s. */
+export const POSE_BLEND_RANGE: [number, number] = [0.15, 0.25];
+/** Plan Step 23: per-zombie height variation is at most ±5 %. */
+export const HEIGHT_SCALE_RANGE: [number, number] = [0.95, 1.05];
+
+/** game.zombieVisual (Steps 23–24): rig proportions, variation, palettes and animation timings. */
+function validateZombieVisual(errors: string[], game: Obj, zombies: Obj): void {
+  const v = game.zombieVisual;
+  if (!isObj(v)) { errors.push('game.zombieVisual: 缺失'); return; }
+  const zv = v as unknown as ZombieVisualConfig;
+  if (!isObj(v.proportions)) { errors.push('game.zombieVisual.proportions: 缺失'); return; }
+  for (const [k, val] of Object.entries(v.proportions)) {
+    if (typeof val !== 'number' || !(val > 0)) errors.push(`game.zombieVisual.proportions.${k}: 应为正数`);
+  }
+  if (!isObj(v.palettes)) errors.push('game.zombieVisual.palettes: 缺失');
+  else for (const k of ZOMBIE_PALETTES) {
+    const list = v.palettes[k];
+    if (!Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== 'string')) errors.push(`game.zombieVisual.palettes.${k}: 需要至少一个颜色字符串`);
+  }
+  const hs = zv.variation?.heightScale;
+  if (!Array.isArray(hs) || hs.length !== 2 || !(hs[0] <= hs[1]) || hs[0] < HEIGHT_SCALE_RANGE[0] || hs[1] > HEIGHT_SCALE_RANGE[1]) {
+    errors.push(`game.zombieVisual.variation.heightScale: 应在 [${HEIGHT_SCALE_RANGE.join(', ')}] 内`);
+  }
+  const anim = zv.animation;
+  if (!isObj(anim) || !isObj(anim.death)) { errors.push('game.zombieVisual.animation: 缺失'); return; }
+  for (const key of ['blendTime', 'deathBlendTime'] as const) {
+    const t = anim[key];
+    if (typeof t !== 'number' || t < POSE_BLEND_RANGE[0] || t > POSE_BLEND_RANGE[1]) {
+      errors.push(`game.zombieVisual.animation.${key}: 应在 ${POSE_BLEND_RANGE[0]}～${POSE_BLEND_RANGE[1]} s 内`);
+    }
+  }
+  validateTypeVisuals(errors, v, anim as unknown as Obj);
+  const death = deathDuration(anim);
+  const head = headCenterHeight(zv.proportions);
+  for (const [id, z] of Object.entries(zombies)) {
+    if (!isObj(z)) continue;
+    const zd = z as unknown as ZombieDef;
+    if (typeof zd.deathRemoveDelay === 'number' && !(death < zd.deathRemoveDelay)) {
+      errors.push(`game.zombieVisual.animation.death: 总时长 ${death.toFixed(2)} s 应小于 zombies.${id}.deathRemoveDelay`);
+    }
+    const range = zd.headHeightRange;
+    if (Array.isArray(range) && Array.isArray(hs) && (head * hs[0] < range[0] || head * hs[1] > range[1])) {
+      errors.push(`game.zombieVisual.proportions: 头部中心高度 ${head.toFixed(2)} m（含身高差异）超出 zombies.${id}.headHeightRange`);
+    }
+  }
+}
+
+const ARMOR_KINDS = new Set(['cone', 'bucket', 'newspaper', 'screendoor', 'helmet']);
+const ARMOR_PROTECTS = new Set(['head', 'body', 'front']);
+const ACCESSORIES = new Set(['cone', 'bucket', 'helmet', 'shoulderPads', 'pole', 'newspaper', 'screendoor']);
+const ABILITY_FIELDS: Record<string, string[]> = {
+  poleVault: ['triggerRange', 'triggerAngleDeg', 'duration', 'landingDistance', 'speedAfter'],
+  newspaperRage: ['rageDuration', 'chaseSpeedAfter', 'wanderSpeedAfter'],
+  charge: ['minDistance', 'approachSpeed'],
+};
+
+const POSE_STYLES = new Set(['normal', 'newspaper', 'screendoor', 'football', 'pole']);
+/** Revision 2 animation blocks: every field must be a finite number. */
+const TYPE_ANIM_BLOCKS = ['vault', 'rage', 'newspaper', 'screendoor', 'charge'] as const;
+const DROPPED_PROP_FIELDS = ['maxActive', 'restSeconds', 'fadeSeconds', 'launchSpeed', 'spinSpeed'];
+
+function numberBlock(errors: string[], where: string, block: unknown): block is Obj {
+  if (!isObj(block)) { errors.push(`${where}: 缺失`); return false; }
+  for (const [k, val] of Object.entries(block)) if (typeof val !== 'number' || !Number.isFinite(val)) errors.push(`${where}.${k}: 应为数字`);
+  return true;
+}
+
+/** Step 28: accessory colours, dropped-prop tunables and the vault / rage / prop-holding pose blocks. */
+function validateTypeVisuals(errors: string[], v: Obj, anim: Obj): void {
+  const colors = v.accessoryColors;
+  if (!isObj(colors)) errors.push('game.zombieVisual.accessoryColors: 缺失');
+  else for (const a of ACCESSORIES) if (typeof colors[a] !== 'string') errors.push(`game.zombieVisual.accessoryColors.${a}: 需要颜色字符串`);
+  const dp = v.droppedProps;
+  if (numberBlock(errors, 'game.zombieVisual.droppedProps', dp)) {
+    for (const k of DROPPED_PROP_FIELDS) if (!((dp[k] as number) > 0)) errors.push(`game.zombieVisual.droppedProps.${k}: 应为正数`);
+    if (!((dp.gravity as number) < 0)) errors.push('game.zombieVisual.droppedProps.gravity: 应为负数（向下）');
+    if (!((dp.bounce as number) >= 0 && (dp.bounce as number) < 1)) errors.push('game.zombieVisual.droppedProps.bounce: 应在 0～1 之间（不含 1）');
+  }
+  for (const b of TYPE_ANIM_BLOCKS) numberBlock(errors, `game.zombieVisual.animation.${b}`, anim[b]);
+  const vault = anim.vault;
+  if (isObj(vault) && !(0 < (vault.plantEnd as number) && (vault.plantEnd as number) < (vault.flightEnd as number) && (vault.flightEnd as number) < 1)) {
+    errors.push('game.zombieVisual.animation.vault: 需要 0 < plantEnd < flightEnd < 1');
+  }
+  if (isObj(vault) && !((vault.arcHeight as number) > 0)) errors.push('game.zombieVisual.animation.vault.arcHeight: 应为正数');
+  if (typeof anim.armorHitHeadScale !== 'number' || !(anim.armorHitHeadScale >= 1)) errors.push('game.zombieVisual.animation.armorHitHeadScale: 应为不小于 1 的数字');
+}
+
+/** zombies.<id>.visual: accessories must exist, armour parts must be worn, pose style must be known. */
+function validateZombieLook(errors: string[], id: string, z: Obj): void {
+  const where = `zombies.${id}.visual`;
+  const vis = z.visual;
+  if (!isObj(vis)) { errors.push(`${where}: 缺失`); return; }
+  const acc = Array.isArray(vis.accessories) ? vis.accessories.map(String) : null;
+  if (!acc || acc.some((a) => !ACCESSORIES.has(a))) errors.push(`${where}.accessories: 应为配件 id 列表`);
+  if (!POSE_STYLES.has(String(vis.poseStyle))) errors.push(`${where}.poseStyle: 未知动作风格 "${String(vis.poseStyle)}"`);
+  if (typeof vis.allowMissingArm !== 'boolean') errors.push(`${where}.allowMissingArm: 应为布尔值`);
+  if (vis.palette !== undefined) {
+    if (!isObj(vis.palette)) errors.push(`${where}.palette: 应为对象`);
+    else for (const [k, list] of Object.entries(vis.palette)) {
+      if (!ZOMBIE_PALETTES.includes(k) || !Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== 'string')) {
+        errors.push(`${where}.palette.${k}: 应为已知配色键和非空颜色列表`);
+      }
+    }
+  }
+  const armor = z.armor;
+  if (acc && isObj(armor) && Array.isArray(armor.parts)) {
+    for (const p of armor.parts) if (!acc.includes(String(p))) errors.push(`${where}.accessories: 缺少护甲部件 "${String(p)}"`);
+  }
+  const pole = isObj(z.abilities) ? z.abilities.poleVault : undefined;
+  if (acc && isObj(pole) && !acc.includes('pole')) errors.push(`${where}.accessories: 撑杆跳僵尸需要 "pole" 配件`);
+}
+
+/** Slowest walk speed any character can have (D-29: every zombie speed must stay below it). */
+export function playerWalkSpeed(game: Obj, chars: Obj): number {
+  const walk = (game.movement as Obj | undefined)?.walkSpeed;
+  const mults = Object.values(chars).map((c) => (isObj(c) && typeof c.moveSpeedMultiplier === 'number' ? c.moveSpeedMultiplier : 1));
+  return (typeof walk === 'number' ? walk : 0) * (mults.length ? Math.min(...mults) : 1);
+}
+
+function validateArmor(errors: string[], id: string, armor: unknown): void {
+  if (armor === null || armor === undefined) return;
+  const where = `zombies.${id}.armor`;
+  if (!isObj(armor)) { errors.push(`${where}: 应为对象或 null`); return; }
+  if (!ARMOR_KINDS.has(String(armor.kind))) errors.push(`${where}.kind: 未知护甲类型 "${String(armor.kind)}"`);
+  if (typeof armor.health !== 'number' || !(armor.health > 0)) errors.push(`${where}.health: 应为正数`);
+  if (!ARMOR_PROTECTS.has(String(armor.protects))) errors.push(`${where}.protects: 应为 head / body / front`);
+  if (typeof armor.frontAngleDeg !== 'number' || armor.frontAngleDeg < 0 || armor.frontAngleDeg > 180) errors.push(`${where}.frontAngleDeg: 应为 0～180 的数字`);
+  else if (armor.protects === 'front' && !(armor.frontAngleDeg > 0)) errors.push(`${where}.frontAngleDeg: 正面防护需要大于 0 的角度`);
+  if (!('dropProp' in armor) || (armor.dropProp !== null && !ACCESSORIES.has(String(armor.dropProp)))) errors.push(`${where}.dropProp: 应为配件 id 或 null`);
+  if (!Array.isArray(armor.parts) || armor.parts.some((p) => !ACCESSORIES.has(String(p)))) errors.push(`${where}.parts: 应为配件 id 列表`);
+  if (typeof armor.metal !== 'boolean') errors.push(`${where}.metal: 应为布尔值`);
+}
+
+function validateAbilities(errors: string[], id: string, abilities: unknown): void {
+  if (abilities === undefined) return;
+  if (!isObj(abilities)) { errors.push(`zombies.${id}.abilities: 应为对象`); return; }
+  for (const [name, ab] of Object.entries(abilities)) {
+    const fields = ABILITY_FIELDS[name];
+    if (!fields) { errors.push(`zombies.${id}.abilities: 未知能力 "${name}"`); continue; }
+    if (!isObj(ab)) { errors.push(`zombies.${id}.abilities.${name}: 应为对象`); continue; }
+    for (const f of fields) {
+      if (typeof ab[f] !== 'number' || !(ab[f] >= 0)) errors.push(`zombies.${id}.abilities.${name}.${f}: 应为非负数`);
+    }
+  }
+}
+
+/** Revision 2: armour, abilities and the D-29 speed rule for every zombie type. */
+function validateZombieTypes(errors: string[], zombies: Obj, walkSpeed: number): void {
+  for (const [id, z] of Object.entries(zombies)) {
+    if (!isObj(z)) continue;
+    validateArmor(errors, id, z.armor);
+    validateAbilities(errors, id, z.abilities);
+    validateZombieLook(errors, id, z);
+    const zd = z as unknown as ZombieDef;
+    if (typeof zd.wanderSpeed !== 'number' || typeof zd.chaseSpeed !== 'number') continue;
+    const fastest = Math.max(...allMoveSpeeds(zd).filter((s) => typeof s === 'number'));
+    if (!(fastest < walkSpeed)) {
+      errors.push(`zombies.${id}: 最高移速 ${fastest} m/s 不低于玩家步行速度 ${walkSpeed} m/s（违反 D-29 玩家可脱战）`);
+    }
+  }
+}
+
+/** Revision 2: district spawn tables (map) and per-type caps / heavy types (game.spawnDirector). */
+function validateSpawnTypes(errors: string[], map: MapConfig, game: Obj, zombieIds: Set<string>): void {
+  const districts = new Set((map.districts ?? []).map((d) => d.id));
+  const table = map.districtZombieTypes;
+  if (!isObj(table)) errors.push('map.districtZombieTypes: 缺失');
+  else for (const [district, weights] of Object.entries(table)) {
+    const where = `map.districtZombieTypes.${district}`;
+    if (!districts.has(district)) errors.push(`${where}: 街区 "${district}" 不存在`);
+    if (!isObj(weights)) { errors.push(`${where}: 应为对象`); continue; }
+    let sum = 0;
+    for (const [type, w] of Object.entries(weights)) {
+      if (!zombieIds.has(type)) errors.push(`${where}: 僵尸类型 "${type}" 不存在`);
+      if (typeof w !== 'number' || !(w >= 0)) errors.push(`${where}.${type}: 权重不能为负`);
+      else sum += w;
+    }
+    if (!(sum > 0)) errors.push(`${where}: 权重总和应大于 0`);
+  }
+  const sd = game.spawnDirector;
+  if (!isObj(sd)) { errors.push('game.spawnDirector: 缺失'); return; }
+  if (!zombieIds.has(String(sd.defaultZombieType))) errors.push(`game.spawnDirector.defaultZombieType: 僵尸类型 "${String(sd.defaultZombieType)}" 不存在`);
+  if (!Array.isArray(sd.heavyZombieTypes)) errors.push('game.spawnDirector.heavyZombieTypes: 缺失');
+  else for (const t of sd.heavyZombieTypes) if (!zombieIds.has(String(t))) errors.push(`game.spawnDirector.heavyZombieTypes: 僵尸类型 "${String(t)}" 不存在`);
+  if (typeof sd.heavyWeightStep !== 'number' || sd.heavyWeightStep < 0) errors.push('game.spawnDirector.heavyWeightStep: 应为非负数');
+  if (!isObj(sd.zombieTypeCaps)) errors.push('game.spawnDirector.zombieTypeCaps: 缺失');
+  else for (const [t, cap] of Object.entries(sd.zombieTypeCaps)) {
+    if (!zombieIds.has(t)) errors.push(`game.spawnDirector.zombieTypeCaps: 僵尸类型 "${t}" 不存在`);
+    if (typeof cap !== 'number' || !Number.isInteger(cap) || cap < 1) errors.push(`game.spawnDirector.zombieTypeCaps.${t}: 应为正整数`);
+  }
+}
+
 export function validateConfig(raw: RawConfig): string[] {
   const errors: string[] = [];
   for (const key of ['characters', 'weapons', 'zombies', 'plants', 'shop', 'map', 'game'] as const) {
@@ -215,5 +412,8 @@ export function validateConfig(raw: RawConfig): string[] {
   validatePlants(errors, normalizePlants(raw.plants), shopById, charIds);
   validateShop(errors, items, charIds, typeof hotbarSlots === 'number' ? hotbarSlots : 6);
   validateMap(errors, raw.map as MapConfig, new Set(Object.keys(zombies)), shopIds);
+  validateZombieVisual(errors, raw.game as Obj, zombies);
+  validateZombieTypes(errors, zombies, playerWalkSpeed(raw.game as Obj, chars));
+  validateSpawnTypes(errors, raw.map as MapConfig, raw.game as Obj, new Set(Object.keys(zombies)));
   return errors;
 }

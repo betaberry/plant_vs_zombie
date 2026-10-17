@@ -148,7 +148,15 @@ export class AudioManager {
     this.disposers.forEach((f) => f());
     this.disposers = [
       ev.on('weaponFired', (e) => this.play2D(e.ice ? 'pea_shot_ice' : 'pea_shot', 0.06)),
-      ev.on('zombieHit', (e) => (e.damage > 0 ? this.play3D(e.ice ? 'hit_frost' : 'hit_flesh', e.pos) : this.play3D('hit_soft', e.pos))),
+      ev.on('zombieHit', (e) => {
+        if (e.armor === 'metal') this.play3D('hit_armor_metal', e.pos, 0.12);
+        else if (e.armor === 'soft' || e.damage <= 0) this.play3D('hit_soft', e.pos);
+        else this.play3D(e.ice ? 'hit_frost' : 'hit_flesh', e.pos);
+      }),
+      // Plant peas / explosions on metal armour clank too (gun hits are covered by zombieHit above).
+      ev.on('armorHit', (e) => e.metal && e.source !== 'gun' && this.play3D('hit_armor_metal', e.pos, 0.12)),
+      ev.on('propLanded', (e) => this.play3D(e.metal ? 'prop_metal_clang' : 'hit_soft', e.pos, 0.1)),
+      ev.on('zombieRage', (e) => this.play3D('zombie_roar', e.pos, 0.08)),
       ev.on('worldHit', (e) => this.play3D(`hit_${e.material === 'wood' ? 'wood' : e.material === 'metal' ? 'metal' : e.material === 'glass' ? 'glass' : 'concrete'}`, e.pos)),
       ev.on('hitMarker', (e) => e.kill && this.play2D('kill_confirm')),
       ev.on('dryFire', (e) => this.play2D(e.reserveEmpty ? 'dry_reserve' : 'dry_mag')),

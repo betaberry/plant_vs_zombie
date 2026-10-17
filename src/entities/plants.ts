@@ -193,7 +193,8 @@ export class PlantManager {
     for (const part of PARTS[type] ?? []) plant.partIds.push(this.pools[part.pool].acquire(part.color));
     this.addCollider(plant);
     if (def.isPhysicalBlocker) {
-      const z = store.config.zombies.basic_zombie;
+      // Nav break cost is a graph-wide value: priced against the director's default (basic) type.
+      const z = store.config.zombies[store.config.game.spawnDirector.defaultZombieType]!;
       const breakCost = (def.health / ((z.attackDamageVsPlant[type] ?? z.attackDamage) / z.attackInterval)) * z.chaseSpeed * z.breakCostMultiplier;
       const affected = this.d.nav.blockNear(plant.attackableId, pos, def.footprintRadius + z.colliderRadius, breakCost);
       this.d.zombies.invalidatePaths(affected);
@@ -296,7 +297,8 @@ export class PlantManager {
     let fired = false;
     for (const z of this.d.zombies.zombies) {
       if (!z.isAlive() || p.triggered.has(z.attackableId) || distXZ(z.pos, p.pos) > r + z.def.colliderRadius) continue;
-      z.root(p.def.rootDuration ?? 0);
+      // A pole vaulter in mid-vault sails over the vine (Revision 2); the trap stays armed.
+      if (!z.root(p.def.rootDuration ?? 0)) continue;
       p.triggered.add(z.attackableId);
       fired = true;
     }

@@ -59,6 +59,23 @@ const RECIPES: Record<SynthRecipe, Tone[]> = {
   ui_close: [{ type: 'triangle', f0: 800, f1: 500, dur: 0.1, gain: 0.25 }],
   pickup: [{ type: 'triangle', f0: 900, f1: 1500, dur: 0.12, gain: 0.3 }],
   vine: [{ type: 'noise', f0: 0, f1: 0, dur: 0.4, gain: 0.4, filter: { type: 'bandpass', freq: 400 } }],
+  // Revision 2: metallic ping (inharmonic partials), falling bucket clang, newspaper rage roar.
+  armor_metal: [
+    { type: 'square', f0: 1850, f1: 1700, dur: 0.18, gain: 0.18, filter: { type: 'bandpass', freq: 2400, q: 6 } },
+    { type: 'sine', f0: 2970, f1: 2900, dur: 0.25, gain: 0.2 },
+    { type: 'noise', f0: 0, f1: 0, dur: 0.03, gain: 0.4, filter: { type: 'highpass', freq: 3000 } },
+  ],
+  metal_clang: [
+    { type: 'triangle', f0: 620, f1: 560, dur: 0.5, gain: 0.35 },
+    { type: 'sine', f0: 1370, f1: 1330, dur: 0.4, gain: 0.2 },
+    { type: 'noise', f0: 0, f1: 0, dur: 0.06, gain: 0.5, filter: { type: 'bandpass', freq: 1800, q: 2 } },
+    { type: 'triangle', f0: 600, f1: 540, dur: 0.3, gain: 0.18, delay: 0.16 },
+  ],
+  zombie_roar: [
+    { type: 'sawtooth', f0: 150, f1: 90, dur: 0.75, gain: 0.45, filter: { type: 'lowpass', freq: 900 } },
+    { type: 'sawtooth', f0: 223, f1: 130, dur: 0.7, gain: 0.25, filter: { type: 'lowpass', freq: 1200 } },
+    { type: 'noise', f0: 0, f1: 0, dur: 0.6, gain: 0.25, filter: { type: 'bandpass', freq: 700, q: 1.2 } },
+  ],
 };
 
 /** Renders a recipe into an AudioBuffer (offline) so it can be played like any loaded sample. */

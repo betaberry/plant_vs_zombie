@@ -15,8 +15,8 @@ Built without asking: plan approval is off for this piece of work (from scope ex
 Full plan: aidlc/spaces/default/intents/261016-pvz-fps-game/construction/code-generation/code-generation-plan.md
 Test instructions: aidlc/spaces/default/intents/261016-pvz-fps-game/construction/code-generation/unit-test-instructions.md
 
-[Approval Fingerprint]: sha256:v3:c8a02e7d535019a6df81566dea191e974cc2afba9a3549ac649c9051475dcdf3
-[Planned Source]: bc9ee58a38686fc1905826bb6eb0b479673f04e5e41b1275100203c2b6fbede5
+[Approval Fingerprint]: sha256:v3:6fe50df42d08638d4420c4142ab36604183739aad07a71d1c5789daa68cc2da5
+[Planned Source]: 40a16842a818fe95bd100f081346171da07615d0a62ed6b4d1ab5ad73e9f9a10
 
 
 [Answer]: Plan approval off
