@@ -2,7 +2,8 @@
 import type { Vec3Like } from '../core/events';
 import type { HitZone } from './hitzone';
 
-export type Team = 'player' | 'zombie' | 'plant';
+/** core: the guard-mode core house (FR3). */
+export type Team = 'player' | 'zombie' | 'plant' | 'core';
 
 export interface DamageInfo {
   source: 'gun' | 'plant' | 'zombie' | 'explosion';
@@ -12,6 +13,8 @@ export interface DamageInfo {
   byPlant?: boolean;
   /** Zone multiplier already included in the amount (gun hits); armour removes it (Revision 2). */
   zoneMultiplier?: number;
+  /** Attacking plant id (guard mode aggro, FR7.2). */
+  attackerId?: string;
 }
 
 export interface DamageResult {

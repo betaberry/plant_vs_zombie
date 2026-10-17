@@ -186,11 +186,15 @@ export class AudioManager {
       ev.on('plantRejected', () => this.play2D('ui_error')),
       ev.on('pickup', () => this.play2D('pickup')),
       ev.on('footstep', (e) => this.play3D('footstep', e.pos, 0.15)),
+      // Guard mode: reuse existing sounds (no new assets).
+      ev.on('bossSmash', (e) => this.play3D('explosion', e.pos, 0.05)),
+      ev.on('coreStage', () => this.play2D('plant_destroyed')),
+      ev.on('waveStarted', () => this.play2D('zombie_roar')),
     ];
   }
 
   /** Per-frame: music crossfade by nearby zombies (FR-AUD-06), heartbeat at low health, distant groans. */
-  update(dt: number, s: { nearbyZombies: number; lowHealth: boolean; alive: boolean; listenerPos: Vec3Like; distantZombie: Vec3Like | null }): void {
+  update(dt: number, s: { nearbyZombies: number; lowHealth: boolean; alive: boolean; listenerPos: Vec3Like; distantZombie: Vec3Like | null; coreLow?: boolean }): void {
     if (!this.ready) return;
     const a = store.config.game.audio;
     const target = s.nearbyZombies >= a.combatZombieCount ? 1 : 0;
@@ -199,7 +203,8 @@ export class AudioManager {
     this.combat?.setVolume(this.combatMix);
     this.wind?.setVolume(0.6);
     this.heartbeatTimer -= dt;
-    if (s.lowHealth && s.alive && this.heartbeatTimer <= 0) {
+    // Guard mode (FR12.2): the core below 50 % also beats the heart.
+    if (((s.lowHealth && s.alive) || s.coreLow === true) && this.heartbeatTimer <= 0) {
       this.heartbeatTimer = 0.9;
       this.play2D('heartbeat');
     }

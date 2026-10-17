@@ -1,0 +1,44 @@
+{
+  "id": "ring_01",
+  "kind": "ring",
+  "size": [140, 140],
+  "rings": [
+    { "id": "outer", "radius": 50 },
+    { "id": "middle", "radius": 32 },
+    { "id": "inner", "radius": 16 }
+  ],
+  "laneWidth": 8,
+  "wallHeight": 6,
+  "outerWallThickness": 2,
+  "elevated": { "between": ["outer", "middle"], "fromDeg": 200, "toDeg": 340, "height": 4, "railHeight": 1 },
+  "core": { "center": [0, 0], "size": [12, 12], "height": 6, "doorSide": "south", "doorWidth": 2 },
+  "entrances": [
+    { "id": "gate_ne", "angleDeg": 45, "width": 8, "spawnPoints": [{ "radius": 60, "angleDeg": 42 }, { "radius": 60, "angleDeg": 48 }, { "radius": 63, "angleDeg": 45 }] },
+    { "id": "gate_nw", "angleDeg": 135, "width": 8, "spawnPoints": [{ "radius": 60, "angleDeg": 132 }, { "radius": 60, "angleDeg": 138 }, { "radius": 63, "angleDeg": 135 }] },
+    { "id": "gate_sw", "angleDeg": 225, "width": 8, "spawnPoints": [{ "radius": 60, "angleDeg": 222 }, { "radius": 60, "angleDeg": 228 }, { "radius": 63, "angleDeg": 225 }] },
+    { "id": "gate_se", "angleDeg": 315, "width": 8, "spawnPoints": [{ "radius": 60, "angleDeg": 312 }, { "radius": 60, "angleDeg": 318 }, { "radius": 63, "angleDeg": 315 }] }
+  ],
+  "ramps": [
+    { "id": "ramp_om_a", "from": "outer", "to": "middle", "angleDeg": 60, "width": 6, "slopeDeg": 0 },
+    { "id": "ramp_om_b", "from": "outer", "to": "middle", "angleDeg": 120, "width": 6, "slopeDeg": 0 },
+    { "id": "ramp_mi_a", "from": "middle", "to": "inner", "angleDeg": 3, "width": 6, "slopeDeg": 0 },
+    { "id": "ramp_mi_b", "from": "middle", "to": "inner", "angleDeg": 177, "width": 6, "slopeDeg": 0 }
+  ],
+  "stairs": [
+    { "id": "stair_w", "angleDeg": 205, "width": 2 },
+    { "id": "stair_e", "angleDeg": 335, "width": 2 }
+  ],
+  "playerSpawns": [
+    { "id": "ps_s", "pos": [0, 0, 9.5] },
+    { "id": "ps_e", "pos": [9.5, 0, 0] },
+    { "id": "ps_n", "pos": [0, 0, -9.5] },
+    { "id": "ps_w", "pos": [-9.5, 0, 0] }
+  ],
+  "landmarks": [
+    { "id": "lm_tower", "kind": "tower", "pos": { "radius": 41, "angleDeg": 90 } },
+    { "id": "lm_water", "kind": "water_tower", "pos": { "radius": 24, "angleDeg": 270 } },
+    { "id": "lm_yard", "kind": "container_yard", "pos": { "radius": 41, "angleDeg": 0 } }
+  ],
+  "nav": { "laneNodeSpacing": 4, "coreApproachDistance": 1.5 },
+  "wallSegmentDeg": 5
+}

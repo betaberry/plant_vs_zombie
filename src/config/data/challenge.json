@@ -1,0 +1,74 @@
+{
+  "difficulties": {
+    "easy": {
+      "waves": 5,
+      "firstWaveCount": 4,
+      "waveIncrement": 2,
+      "waveCap": 16,
+      "zombieHealthMultiplier": 0.8,
+      "playerDamageMultiplier": 0.7,
+      "coreDamageMultiplier": 0.7,
+      "countdownSeconds": 30,
+      "entranceCap": 2,
+      "sunIncomeMultiplier": 1.2,
+      "coreHealth": 4000,
+      "bossHealth": 3000
+    },
+    "standard": {
+      "waves": 8,
+      "firstWaveCount": 6,
+      "waveIncrement": 3,
+      "waveCap": 30,
+      "zombieHealthMultiplier": 1.0,
+      "playerDamageMultiplier": 1.0,
+      "coreDamageMultiplier": 1.0,
+      "countdownSeconds": 30,
+      "entranceCap": 3,
+      "sunIncomeMultiplier": 1.0,
+      "coreHealth": 5000,
+      "bossHealth": 4000
+    },
+    "hard": {
+      "waves": 12,
+      "firstWaveCount": 8,
+      "waveIncrement": 3,
+      "waveCap": 40,
+      "zombieHealthMultiplier": 1.25,
+      "playerDamageMultiplier": 1.3,
+      "coreDamageMultiplier": 1.3,
+      "countdownSeconds": 30,
+      "entranceCap": 4,
+      "sunIncomeMultiplier": 0.8,
+      "coreHealth": 7000,
+      "bossHealth": 6000
+    }
+  },
+  "waves": {
+    "typeUnlocks": [
+      { "type": "basic_zombie", "fromWave": 1, "weight": 4 },
+      { "type": "conehead_zombie", "fromWave": 2, "weight": 3 },
+      { "type": "buckethead_zombie", "fromWave": 3, "weight": 2 },
+      { "type": "screendoor_zombie", "fromWave": 4, "weight": 1.5 },
+      { "type": "football_zombie", "fromWave": 5, "weight": 1 },
+      { "type": "pole_vaulter_zombie", "fromWave": 6, "weight": 1.5 },
+      { "type": "newspaper_zombie", "fromWave": 7, "weight": 1.5 }
+    ],
+    "spawnIntervalBase": 2.5,
+    "spawnIntervalFactor": 0.9,
+    "spawnIntervalMin": 0.5,
+    "entranceCurve": [
+      { "fromWave": 1, "open": 1 },
+      { "fromWave": 3, "open": 2 },
+      { "fromWave": 5, "open": 3 },
+      { "fromWave": 7, "open": 4 }
+    ],
+    "maxAlive": 40,
+    "bossType": "gargantuar_zombie"
+  },
+  "core": {
+    "damageStages": [0.75, 0.5, 0.25, 0],
+    "lowHealthFraction": 0.5
+  },
+  "targeting": { "playerApproachRadius": 12, "plantApproachRadius": 8 },
+  "spawnRule": { "minPlayerDistance": 15, "coreDirectionHalfAngleDeg": 45 }
+}

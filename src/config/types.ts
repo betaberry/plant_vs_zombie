@@ -118,13 +118,16 @@ export interface ZombieDef {
   abilities?: ZombieAbilitiesDef;
   /** Revision 2: per-type look (accessories, palette overrides, pose style). */
   visual: ZombieTypeVisualDef;
+  /** Guard mode only (boss / imp): never in practice-mode spawn tables or normal wave pools (FR8.5). */
+  guardOnly?: boolean;
 }
 
 export type ArmorKind = 'cone' | 'bucket' | 'newspaper' | 'screendoor' | 'helmet';
 /** head: head hits only · body: head + torso · front: every zone, but only from within ±frontAngleDeg of facing. */
 export type ArmorProtects = 'head' | 'body' | 'front';
-export type ZombieAccessory = 'cone' | 'bucket' | 'helmet' | 'shoulderPads' | 'pole' | 'newspaper' | 'screendoor';
-export type ZombiePoseStyle = 'normal' | 'newspaper' | 'screendoor' | 'football' | 'pole';
+/** telephonePole / impRider: guard mode gargantuar (pole weapon, imp riding on its back). */
+export type ZombieAccessory = 'cone' | 'bucket' | 'helmet' | 'shoulderPads' | 'pole' | 'newspaper' | 'screendoor' | 'telephonePole' | 'impRider';
+export type ZombiePoseStyle = 'normal' | 'newspaper' | 'screendoor' | 'football' | 'pole' | 'gargantuar' | 'imp';
 
 export interface ZombieArmorDef {
   kind: ArmorKind;
@@ -167,10 +170,39 @@ export interface ChargeDef {
   approachSpeed: number;
 }
 
+/** Guard mode boss (gargantuar): overhead pole smash with a wind-up and an area of effect (FR8.3). */
+export interface SmashDef {
+  /** Seconds between starting the swing and the hit (no damage is dealt during the wind-up). */
+  windup: number;
+  /** Area radius around the impact point (m). */
+  radius: number;
+  /** Damage to the core per hit (before the difficulty core-damage multiplier). */
+  damageVsCore: number;
+  /** Damage to a player per hit (before the difficulty player-damage multiplier). */
+  damageVsPlayer: number;
+  /** Seconds after a hit before the next swing can start. */
+  cooldown: number;
+  /** Plants (nut walls included) inside the radius are destroyed outright. */
+  destroysPlants: boolean;
+}
+
+/** Guard mode boss: throws one imp toward the defence line at the health threshold (FR8.4). */
+export interface ThrowImpDef {
+  /** Throw once when health / maxHealth falls to or below this fraction. */
+  healthFraction: number;
+  /** Zombie type id of the thrown imp. */
+  impType: string;
+  /** Landing distance ahead of the boss, toward the core (m). */
+  throwDistance: number;
+  flightTime: number;
+}
+
 export interface ZombieAbilitiesDef {
   poleVault?: PoleVaultDef;
   newspaperRage?: NewspaperRageDef;
   charge?: ChargeDef;
+  smash?: SmashDef;
+  throwImp?: ThrowImpDef;
 }
 
 export interface ZombieTypeVisualDef {
@@ -180,6 +212,8 @@ export interface ZombieTypeVisualDef {
   palette?: Partial<Record<ZombiePaletteKey, string[]>>;
   /** False for types that hold a prop with both hands (no torn-off forearm). */
   allowMissingArm: boolean;
+  /** Uniform body scale of the rig (guard mode: gargantuar ≈ 2, imp ≈ 0.6). Default 1. */
+  bodyScale?: number;
 }
 
 export type ZombiesConfig = Record<string, ZombieDef>;
@@ -482,6 +516,14 @@ export interface ZombieAnimationConfig {
   newspaper: { armDeg: number; elbowDeg: number; headDownDeg: number; pageTurnHz: number; pageTurnDeg: number };
   screendoor: { armDeg: number; elbowDeg: number; leanDeg: number };
   charge: { leanDeg: number; headDownDeg: number; armDeg: number; elbowDeg: number; hipSwingScale: number };
+  /** Guard mode boss: heavy walk, overhead pole smash, imp throw (FR8.6). */
+  gargantuar: {
+    stanceWidthDeg: number; stompDip: number; swayRollDeg: number; leanDeg: number; poleArmDeg: number; poleElbowDeg: number;
+    smashRaiseDeg: number; smashSlamDeg: number; smashLeanBackDeg: number; smashLeanDeg: number; smashCrouchDeg: number;
+    throwTime: number; throwBackDeg: number; throwReleaseDeg: number;
+  };
+  /** Guard mode imp: quick scurrying run. */
+  imp: { leanDeg: number; hipSwingScale: number; armPumpDeg: number; elbowDeg: number; bounce: number };
   /** Head flinch multiplier when the hit landed on armour. */
   armorHitHeadScale: number;
 }
@@ -517,12 +559,131 @@ export interface ZombieVisualConfig {
   animation: ZombieAnimationConfig;
 }
 
+// ---------- guard mode: ring map (map_ring_01.json) ----------
+
+export type RingId = 'outer' | 'middle' | 'inner';
+
+export interface RingDef {
+  id: RingId;
+  /** Lane centre-line radius (m). */
+  radius: number;
+}
+
+export interface PolarPoint {
+  radius: number;
+  angleDeg: number;
+}
+
+export interface RingEntranceDef {
+  id: string;
+  /** Angle of the gap in the outer wall; positions use x = r·cos θ, z = r·sin θ. */
+  angleDeg: number;
+  width: number;
+  /** Spawn point group bound to this entrance (FR2-MAP-03). */
+  spawnPoints: PolarPoint[];
+}
+
+export interface RingRampDef {
+  id: string;
+  from: RingId;
+  to: RingId;
+  angleDeg: number;
+  width: number;
+  slopeDeg: number;
+}
+
+export interface RingStairDef {
+  id: string;
+  angleDeg: number;
+  width: number;
+}
+
+export type RingLandmarkKind = 'tower' | 'water_tower' | 'container_yard';
+
+export interface RingMapConfig {
+  id: string;
+  kind: 'ring';
+  size: Vec2Tuple;
+  /** Ordered outer → inner; radii strictly decreasing. */
+  rings: RingDef[];
+  laneWidth: number;
+  wallHeight: number;
+  outerWallThickness: number;
+  /** Raised walkway on top of the wall band between two rings (second layer). */
+  elevated: { between: [RingId, RingId]; fromDeg: number; toDeg: number; height: number; railHeight: number };
+  core: { center: Vec2Tuple; size: Vec2Tuple; height: number; doorSide: DoorSide; doorWidth: number };
+  entrances: RingEntranceDef[];
+  ramps: RingRampDef[];
+  stairs: RingStairDef[];
+  playerSpawns: { id: string; pos: Vec3Tuple }[];
+  landmarks: { id: string; kind: RingLandmarkKind; pos: PolarPoint }[];
+  nav: { laneNodeSpacing: number; coreApproachDistance: number };
+  /** Wall segments approximate the arcs at this angular step. */
+  wallSegmentDeg: number;
+}
+
+export interface MapsConfig {
+  city_01: MapConfig;
+  ring_01: RingMapConfig;
+}
+
+// ---------- guard mode: difficulty and waves (challenge.json) ----------
+
+export type DifficultyId = 'easy' | 'standard' | 'hard';
+
+export interface DifficultyDef {
+  waves: number;
+  firstWaveCount: number;
+  waveIncrement: number;
+  waveCap: number;
+  zombieHealthMultiplier: number;
+  playerDamageMultiplier: number;
+  coreDamageMultiplier: number;
+  countdownSeconds: number;
+  entranceCap: number;
+  sunIncomeMultiplier: number;
+  coreHealth: number;
+  /** Boss health for this difficulty (replaces the health multiplier for the boss). */
+  bossHealth: number;
+}
+
+export interface WaveTypeUnlock {
+  type: string;
+  /** First wave (1-based) in which this type can appear. */
+  fromWave: number;
+  weight: number;
+}
+
+export interface ChallengeConfig {
+  difficulties: Record<DifficultyId, DifficultyDef>;
+  waves: {
+    typeUnlocks: WaveTypeUnlock[];
+    /** Seconds between spawns inside wave 1; each later wave multiplies by intervalFactor. */
+    spawnIntervalBase: number;
+    spawnIntervalFactor: number;
+    spawnIntervalMin: number;
+    /** Open entrance count from a given wave on (before the difficulty entrance cap). */
+    entranceCurve: { fromWave: number; open: number }[];
+    /** Max zombies alive at once (performance budget). */
+    maxAlive: number;
+    bossType: string;
+  };
+  core: {
+    /** Health fractions at which damage stages 1..4 begin (strictly decreasing, last = 0). */
+    damageStages: number[];
+    lowHealthFraction: number;
+  };
+  targeting: { playerApproachRadius: number; plantApproachRadius: number };
+  spawnRule: { minPlayerDistance: number; coreDirectionHalfAngleDeg: number };
+}
+
 export interface AllConfig {
   characters: Record<string, CharacterDef>;
   weapons: WeaponsConfig;
   zombies: ZombiesConfig;
   plants: PlantsConfig;
   shop: ShopConfig;
-  map: MapConfig;
+  maps: MapsConfig;
+  challenge: ChallengeConfig;
   game: GameConfig;
 }

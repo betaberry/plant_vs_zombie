@@ -9,9 +9,13 @@ type AnyObj = Record<string, any>;
 const vis = config().game.zombieVisual;
 
 describe('zombie rig geometry', () => {
-  it('stays within the 24 zombie draw calls (one InstancedMesh per part type)', () => {
-    expect(PART_TYPES.length).toBeLessThanOrEqual(24);
+  // Guard mode (plan Step 14) deliberately raised the budget from 24 to 26: the gargantuar's telephone pole
+  // and the imp on its back are one shared InstancedMesh each. Total scene budget stays ≤ 150 (NFR1).
+  it('stays within the 26 zombie draw calls (one InstancedMesh per part type)', () => {
+    expect(PART_TYPES.length).toBeLessThanOrEqual(26);
     expect(new Set(PART_TYPES).size).toBe(PART_TYPES.length);
+    expect(ACCESSORY_PART_TYPES).toContain('telephonePole');
+    expect(ACCESSORY_PART_TYPES).toContain('impRider');
   });
 
   it('builds every part (accessories included) with finite positions and baked vertex colours', () => {

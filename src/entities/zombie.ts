@@ -16,6 +16,11 @@ import {
 } from '../logic/zombieAbilities';
 import { canSee } from '../logic/perception';
 import { chooseZombieTarget, type TargetPlant } from '../logic/targeting';
+import { aggroAfterPlantDestroyed, chooseGuardTarget, guardLodDistance, type GuardAggro } from '../logic/guardTargeting';
+import { scaledCoreDamage, scaledPlayerDamage } from '../logic/guardRules';
+import { createBossState, impLandingPoint, shouldThrowImp, startSmash, stepSmash, type BossState, type SmashHit, type SmashTarget } from '../logic/bossAbilities';
+import type { ChallengeConfig, DifficultyDef } from '../config/types';
+import type { CoreHouse } from './coreHouse';
 import { findPath } from '../nav/astar';
 import type { NavGraph } from '../nav/graph';
 import type { PhysicsWorld } from '../physics/world';
@@ -44,9 +49,28 @@ export interface ZombieWorld {
   openDoorsNear(pos: Vec3Like, radius: number): void;
   hasLOS(a: Vec3Like, b: Vec3Like): boolean;
   neighbors(z: Zombie): Zombie[];
+  /** Guard mode hooks; null in practice mode (practice behaviour is unchanged). */
+  guard: GuardHooks | null;
+}
+
+/** Everything a guard-mode zombie needs beyond the practice world (FR7, FR8). */
+export interface GuardHooks {
+  core: CoreHouse;
+  difficulty: DifficultyDef;
+  radii: ChallengeConfig['targeting'];
+  /** Boss smash: every target around the field (filtered by radius in bossAbilities). */
+  smashTargets(): SmashTarget[];
+  /** Applies smash hits (damage commands, particles, camera shake). */
+  applySmash(z: Zombie, impact: Vec3Like, hits: SmashHit[]): void;
+  /** The boss throws its imp toward `to` (spawned on landing). */
+  throwImp(z: Zombie, to: Vec3Like): void;
+  /** Free walkable ground (not inside a wall / the core). */
+  isWalkable(p: Vec3Like): boolean;
 }
 
 const EYE = 1.6;
+/** Guard mode: zombies attack the core from this far outside its walls. */
+const CORE_STAND_OFF = 0.8;
 
 export class Zombie implements ShootTarget {
   readonly team = 'zombie' as const;
@@ -109,6 +133,17 @@ export class Zombie implements ShootTarget {
   vaultProgress = 0;
   /** Render-only: the last hit landed on armour (metal clank / stronger head flinch in Step 28). */
   lastHitArmor = false;
+  /** Body health at spawn (difficulty-scaled in guard mode); BOSS bar and the imp-throw threshold use it. */
+  maxHealth: number;
+  /** Guard mode: who attacked me last (FR7.2). */
+  guardAggro: GuardAggro | null = null;
+  /** Guard mode: marching on / attacking the core house. */
+  targetCore = false;
+  /** Guard mode boss (gargantuar) smash / imp-throw state; null for every other type. */
+  readonly boss: BossState | null;
+  /** Render-only: seconds since the imp throw began (null = not throwing); the imp rides on the back until then. */
+  throwClock: number | null = null;
+  impCarried: boolean;
 
   constructor(
     readonly attackableId: string,
@@ -137,6 +172,21 @@ export class Zombie implements ShootTarget {
     this.body = r.body;
     this.collider = r.collider;
     this.stateTimer = w.rng.range(0.5, 2);
+    this.maxHealth = def.health;
+    this.boss = def.abilities?.smash ? createBossState() : null;
+    this.impCarried = !!def.abilities?.throwImp;
+    if (w.guard) {
+      // FR7.1: wave zombies arrive already marching on the core.
+      this.hasAggro = true;
+      this.targetCore = true;
+      this.state = 'CHASE';
+    }
+  }
+
+  /** Guard mode difficulty scaling (FR5.2) / boss health per difficulty (FR8.2). */
+  setMaxHealth(h: number): void {
+    this.maxHealth = h;
+    this.health = h;
   }
 
   position(): Vec3Like {
@@ -195,6 +245,14 @@ export class Zombie implements ShootTarget {
     this.lastHitHead = info.zone === 'head';
     // + = hit came from the zombie's right (yaw > 0 is a left turn), measured before turning to face it.
     this.lastHitSide = info.from ? -Math.sin(angleDiff(this.yaw, yawTo(this.pos, info.from))) : 0;
+    if (this.w.guard) {
+      // FR7.2: whoever attacked me — the player's gun or a shooting plant — becomes my target.
+      if (info.source === 'gun') this.guardAggro = { kind: 'player', id: 'player' };
+      else if (info.source === 'plant' && info.attackerId) this.guardAggro = { kind: 'plant', id: info.attackerId };
+      this.checkImpThrow();
+      // The boss shrugs off flinches: its smash wind-up is never interrupted.
+      if (this.boss) return res;
+    }
     if (info.from) {
       this.yaw = yawTo(this.pos, info.from);
       if (!this.hasAggro) this.aggro();
@@ -285,8 +343,24 @@ export class Zombie implements ShootTarget {
     return this.state === 'DEAD' && this.deathTime >= this.def.deathRemoveDelay;
   }
 
+  /** FR8.4: at ≤ 50 % health the boss throws its imp once, toward the defence line in front of the core. */
+  private checkImpThrow(): void {
+    const g = this.w.guard;
+    const def = this.def.abilities?.throwImp;
+    if (!g || !this.boss || !def || !shouldThrowImp(this.boss, def, this.health, this.maxHealth)) return;
+    const to = impLandingPoint(this.pos, g.core.center, def, g.core.extent + 2, (p) => g.isWalkable(p));
+    this.throwClock = 0;
+    g.throwImp(this, to);
+  }
+
   update(dt: number): void {
-    const playerDist = distXZ(this.pos, this.w.player.position());
+    const g = this.w.guard;
+    // FR7.7: in guard mode LOD uses the nearer of player and core, so core-bound zombies never freeze.
+    const playerDist = g ? guardLodDistance(this.pos, this.w.player.position(), g.core.center) : distXZ(this.pos, this.w.player.position());
+    if (this.throwClock !== null) {
+      this.throwClock += dt;
+      if (this.throwClock > 0.35) this.impCarried = false;
+    }
     if (this.state === 'DEAD') {
       this.deathTime += dt;
       if (!this.colliderDisabled && this.deathTime >= this.def.colliderDisableDelay) {
@@ -308,6 +382,19 @@ export class Zombie implements ShootTarget {
     this.perceive(dt);
     this.think(dt);
     this.act(dt);
+    this.stepBoss(dt);
+  }
+
+  /** FR8.3: advance the pole smash; on impact every target in the radius is hit (plants destroyed outright). */
+  private stepBoss(dt: number): void {
+    const g = this.w.guard;
+    const def = this.def.abilities?.smash;
+    if (!g || !this.boss || !def) return;
+    const impact = this.boss.smash.impact;
+    const wasWindup = this.boss.smash.phase === 'windup';
+    const d = g.difficulty;
+    const hits = stepSmash(this.boss, def, dt, g.smashTargets(), { core: d.coreDamageMultiplier, player: d.playerDamageMultiplier });
+    if (wasWindup && this.boss.smash.phase === 'cooldown' && impact) g.applySmash(this, impact, hits);
   }
 
   private tickTimers(dt: number): void {
@@ -366,6 +453,10 @@ export class Zombie implements ShootTarget {
     this.decisionTimer -= dt;
     if (this.decisionTimer > 0) return;
     this.decisionTimer = this.def.targeting.reevaluateInterval;
+    if (this.w.guard) {
+      this.thinkGuard(this.w.guard);
+      return;
+    }
     const p = this.w.player;
     const decision = chooseZombieTarget({
       zombiePos: this.pos,
@@ -400,6 +491,47 @@ export class Zombie implements ShootTarget {
     }
   }
 
+  /** Guard mode decision (FR7): aggro → proximity → blocked wall → core. */
+  private thinkGuard(g: GuardHooks): void {
+    const p = this.w.player;
+    const res = chooseGuardTarget({
+      zombiePos: this.pos,
+      players: [{ id: 'player', pos: p.position(), alive: p.isAlive(), secondsSinceSeen: this.secondsSinceSeen }],
+      plants: this.w.targetPlants(this.attackableId),
+      aggro: this.guardAggro,
+      blockingWallId: this.blockingWallId,
+      rules: this.def.targeting,
+      radii: g.radii,
+    });
+    this.guardAggro = res.aggro;
+    const d = res.decision;
+    switch (d.action) {
+      case 'ATTACK_CORE':
+        if (!this.targetCore || this.currentPlantId) this.repathTimer = 0;
+        this.targetCore = true;
+        this.currentPlantId = null;
+        if (this.state !== 'ATTACK') this.state = 'CHASE';
+        break;
+      case 'CHASE_PLAYER':
+        if (this.targetCore) this.repathTimer = 0;
+        this.targetCore = false;
+        this.currentPlantId = null;
+        if (this.state !== 'ATTACK' || this.attackTargetId !== 'player') this.state = 'CHASE';
+        break;
+      case 'ATTACK_PLANT':
+        if (this.currentPlantId !== d.plantId) this.repathTimer = 0;
+        this.targetCore = false;
+        this.currentPlantId = d.plantId;
+        if (this.state !== 'ATTACK') this.state = 'CHASE';
+        break;
+      case 'BREAK':
+        this.targetCore = false;
+        this.currentPlantId = d.plantId;
+        this.state = 'BREAK';
+        break;
+    }
+  }
+
   private currentGoal(): { pos: Vec3Like; targetId: string } | null {
     if (this.currentPlantId) {
       const plant = this.w.plantById(this.currentPlantId);
@@ -407,7 +539,10 @@ export class Zombie implements ShootTarget {
       this.currentPlantId = null;
       if (this.blockingWallId && !this.w.plantById(this.blockingWallId)?.isAlive()) this.blockingWallId = null;
       this.state = 'CHASE';
+      if (this.w.guard) this.targetCore = true;
     }
+    const g = this.w.guard;
+    if (g && (this.targetCore || !this.w.player.isAlive())) return { pos: g.core.approachPoint(this.pos, CORE_STAND_OFF), targetId: 'core' };
     return { pos: this.w.player.position(), targetId: 'player' };
   }
 
@@ -462,10 +597,12 @@ export class Zombie implements ShootTarget {
   private engage(dt: number): void {
     const goal = this.currentGoal();
     if (!goal) return;
-    const d = distXZ(this.pos, goal.pos);
+    const core = goal.targetId === 'core' ? this.w.guard!.core : null;
+    // The core is a house, not a point: measure to its walls.
+    const d = core ? core.distanceTo(this.pos) : distXZ(this.pos, goal.pos);
     const dy = Math.abs(goal.pos.y - this.pos.y);
     const plant = this.currentPlantId ? this.w.plantById(this.currentPlantId) : undefined;
-    const reach = this.def.attackRange + (plant ? 0.6 : 0);
+    const reach = this.def.attackRange + (plant ? 0.6 : 0) + (core ? CORE_STAND_OFF : 0);
     if (this.tryStartVault()) return;
     if (this.state === 'ATTACK' || (d <= reach && dy < 1.6)) {
       this.attack(dt, goal, d <= reach + 0.4 && dy < 1.6);
@@ -522,7 +659,8 @@ export class Zombie implements ShootTarget {
 
   private attack(dt: number, goal: { pos: Vec3Like; targetId: string }, inRange: boolean): void {
     this.state = 'ATTACK';
-    this.yaw += angleDiff(this.yaw, yawTo(this.pos, goal.pos)) * Math.min(1, dt * 8);
+    const face = goal.targetId === 'core' ? this.w.guard!.core.center : goal.pos;
+    this.yaw += angleDiff(this.yaw, yawTo(this.pos, face)) * Math.min(1, dt * 8);
     this.move(dt, null, 0);
     if (this.windup < 0 && this.attackCooldown <= 0) {
       if (!inRange) {
@@ -531,6 +669,7 @@ export class Zombie implements ShootTarget {
       }
       this.windup = this.def.attackWindup;
       this.attackTargetId = goal.targetId;
+      if (this.boss) this.startBossSmash(goal);
     }
     if (this.windup >= 0) {
       this.windup -= dt;
@@ -546,17 +685,36 @@ export class Zombie implements ShootTarget {
     if (this.stateTimer <= 0 && !inRange) this.state = this.currentPlantId && this.blockingWallId === this.currentPlantId ? 'BREAK' : 'CHASE';
   }
 
+  /** Boss: the swing lands ahead of the gargantuar, at most attackRange away (bossAbilities resolves the hits). */
+  private startBossSmash(goal: { pos: Vec3Like; targetId: string }): void {
+    const g = this.w.guard;
+    if (!g || !this.boss) return;
+    const reach = goal.targetId === 'core' ? Math.min(this.def.attackRange, g.core.distanceTo(this.pos)) : Math.min(this.def.attackRange, distXZ(this.pos, goal.pos));
+    const dir = yawTo(this.pos, goal.targetId === 'core' ? g.core.center : goal.pos);
+    startSmash(this.boss, { x: this.pos.x - Math.sin(dir) * reach, y: this.pos.y, z: this.pos.z - Math.cos(dir) * reach });
+  }
+
   private strike(goal: { pos: Vec3Like; targetId: string }, inRange: boolean): void {
     if (!inRange) return;
     store.events.emit('zombieAttack', { pos: this.pos });
+    // The boss deals its damage through the area smash (stepBoss), never as a single-target hit.
+    if (this.boss) return;
+    const g = this.w.guard;
+    if (goal.targetId === 'core' && g) {
+      this.w.commands.dispatch({ type: 'damage', target: g.core, amount: scaledCoreDamage(this.def.attackDamage, g.difficulty), info: { source: 'zombie', from: this.pos } });
+      return;
+    }
     if (goal.targetId === 'player') {
-      this.w.commands.dispatch({ type: 'damage', target: this.w.player, amount: this.def.attackDamage, info: { source: 'zombie', from: this.pos } });
+      const amount = g ? scaledPlayerDamage(this.def.attackDamage, g.difficulty) : this.def.attackDamage;
+      this.w.commands.dispatch({ type: 'damage', target: this.w.player, amount, info: { source: 'zombie', from: this.pos } });
       return;
     }
     const plant = this.w.plantById(goal.targetId);
     if (!plant) return;
     const dmg = this.def.attackDamageVsPlant[plant.type] ?? this.def.attackDamageVsPlant.default ?? this.def.attackDamage;
     const res = this.w.commands.dispatch({ type: 'damage', target: plant, amount: dmg, info: { source: 'zombie', from: this.pos } });
+    // FR7.5: destroying the plant I was attacking turns me on its owner.
+    if (res.killed && g) this.guardAggro = aggroAfterPlantDestroyed(this.guardAggro, this.currentPlantId, plant.attackableId, 'player');
     if (res.killed) {
       if (this.blockingWallId === plant.attackableId) this.blockingWallId = null;
       this.currentPlantId = null;

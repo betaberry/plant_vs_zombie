@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { Vec3Like } from '../core/events';
 import type { Rng } from '../core/rng';
 
-export type ParticleKind = 'pea_juice' | 'dust' | 'sun' | 'dirt' | 'wither' | 'explosion' | 'frost' | 'shell' | 'soft' | 'muzzle';
+export type ParticleKind = 'pea_juice' | 'dust' | 'sun' | 'dirt' | 'wither' | 'explosion' | 'frost' | 'shell' | 'soft' | 'muzzle' | 'smoke' | 'impact';
 
 interface Preset {
   colors: string[];
@@ -25,6 +25,10 @@ const PRESETS: Record<ParticleKind, Preset> = {
   shell: { colors: ['#a1887f', '#d7ccc8'], speed: [1, 3], up: 2, gravity: -10, life: [0.4, 0.7], count: 8 },
   soft: { colors: ['#c5e1a5', '#f1f8e9'], speed: [0.5, 1.5], up: 0.5, gravity: -4, life: [0.2, 0.35], count: 6 },
   muzzle: { colors: ['#dcedc8', '#aed581'], speed: [0.5, 1.2], up: 0, gravity: 0, life: [0.05, 0.1], count: 4 },
+  /** Guard mode: smoke rising from a badly damaged core house (FR3.4 stage 3+). */
+  smoke: { colors: ['#424242', '#616161', '#757575'], speed: [0.1, 0.5], up: 2.2, gravity: 0.6, life: [1.2, 2.2], count: 5 },
+  /** Guard mode: gargantuar pole smash hitting the ground (FR8.3). */
+  impact: { colors: ['#6d4c41', '#8d6e63', '#bdbdbd', '#9e9e9e'], speed: [3, 7], up: 3.5, gravity: -12, life: [0.4, 0.9], count: 45 },
 };
 
 export class Particles {

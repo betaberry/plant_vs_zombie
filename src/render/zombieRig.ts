@@ -14,11 +14,12 @@ import { ACCESSORY_PART_TYPES, buildZombieGeometries, PART_TYPES, type Accessory
 const ACCESSORY_FRAME: Record<AccessoryPart, 'head' | 'spine' | 'forearmR'> = {
   cone: 'head', coneDented: 'head', bucket: 'head', helmet: 'head',
   shoulderPads: 'spine', newspaper: 'spine', screendoor: 'spine', pole: 'forearmR',
+  telephonePole: 'forearmR', impRider: 'spine',
 };
 /** Rig parts instantiated for one configured accessory (the cone also gets its dented twin). */
 const ACCESSORY_PARTS: Record<ZombieAccessory, AccessoryPart[]> = {
   cone: ['cone', 'coneDented'], bucket: ['bucket'], helmet: ['helmet'], shoulderPads: ['shoulderPads'],
-  pole: ['pole'], newspaper: ['newspaper'], screendoor: ['screendoor'],
+  pole: ['pole'], newspaper: ['newspaper'], screendoor: ['screendoor'], telephonePole: ['telephonePole'], impRider: ['impRider'],
 };
 export function accessoryParts(a: ZombieAccessory): readonly AccessoryPart[] {
   return ACCESSORY_PARTS[a];
@@ -77,7 +78,8 @@ export interface ZombieLook {
 export function rollZombieLook(seed: number, v: ZombieVisualConfig, type?: ZombieTypeVisualDef): ZombieLook {
   const rng = createRng(seed);
   const vv = v.variation;
-  const height = rng.range(vv.heightScale[0], vv.heightScale[1]);
+  // Guard mode types scale the whole rig (gargantuar ×2, imp ×0.6); same PRNG draw count for every type.
+  const height = rng.range(vv.heightScale[0], vv.heightScale[1]) * (type?.bodyScale ?? 1);
   const build = rng.range(vv.buildScale[0], vv.buildScale[1]);
   const buildDepth = build * rng.range(0.95, 1.12);
   const colors = {} as Record<ZombiePaletteKey, string>;

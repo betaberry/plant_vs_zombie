@@ -19,7 +19,7 @@ export type PoseState = 'IDLE' | 'WANDER' | 'ALERT' | 'CHASE' | 'ATTACK' | 'AMBU
  * zombie type and the props it still holds: reading a newspaper, raged run, holding a screen door,
  * football charge, carrying a vaulting pole. Changing style cross-fades like a state change.
  */
-export type PoseStyle = 'normal' | 'newspaper' | 'raged' | 'screendoor' | 'charge' | 'pole';
+export type PoseStyle = 'normal' | 'newspaper' | 'raged' | 'screendoor' | 'charge' | 'pole' | 'heavy' | 'imp';
 const STYLED_STATES = new Set<PoseState>(['IDLE', 'WANDER', 'ALERT', 'CHASE']);
 
 export const POSE_KEYS = [
@@ -99,6 +99,8 @@ export interface PoseInput {
   vaultProgress: number;
   /** Revision 2: the last hit landed on armour (stronger head wobble). */
   armorHit: boolean;
+  /** Guard mode boss: seconds since the imp throw began (null = not throwing). */
+  throwClock?: number | null;
 }
 
 export interface PoseTiming {
@@ -300,6 +302,9 @@ export class ZombiePoseAnimator {
       default: idlePose(p, c);
     }
     if (STYLED_STATES.has(this.base)) applyStyle(p, c, this.style);
+    // Guard mode boss: the attack is an overhead two-handed pole smash.
+    if (this.base === 'ATTACK' && this.style === 'heavy') smashPose(p, c, this.timing);
+    if (this.style === 'heavy') throwPose(p, c);
     plantFeet(p, c.props);
   }
 
@@ -659,6 +664,8 @@ function applyStyle(p: Pose, c: Ctx, style: PoseStyle): void {
     case 'screendoor': screendoorStyle(p, c); break;
     case 'charge': chargeStyle(p, c); break;
     case 'pole': poleCarryStyle(p, c); break;
+    case 'heavy': heavyStyle(p, c); break;
+    case 'imp': impStyle(p, c); break;
     default: break;
   }
 }
@@ -723,6 +730,96 @@ function poleCarryStyle(p: Pose, c: Ctx): void {
   p.shoulderRRoll = -6 * DEG;
   p.elbowL = v.carryElbowDeg * DEG;
   p.elbowR = v.carryElbowDeg * DEG;
+}
+
+/** Gargantuar: wide stance, heavy stomping steps (pelvis drops on each footfall), pole held low in the right hand. */
+function heavyStyle(p: Pose, c: Ctx): void {
+  const g = c.a.gargantuar;
+  const L = c.loco;
+  p.hipLRoll += g.stanceWidthDeg * DEG;
+  p.hipRRoll += g.stanceWidthDeg * DEG;
+  p.rootY -= Math.abs(Math.sin(c.stride)) * g.stompDip * L;
+  p.rootRoll += Math.sin(c.stride) * g.swayRollDeg * DEG * L;
+  p.spineRoll -= Math.sin(c.stride) * g.swayRollDeg * 0.5 * DEG * L;
+  p.spinePitch = g.leanDeg * DEG;
+  p.neckPitch = -g.leanDeg * 0.4 * DEG;
+  p.shoulderRPitch = g.poleArmDeg * DEG + Math.sin(c.stride) * 6 * DEG * L;
+  p.elbowR = g.poleElbowDeg * DEG;
+  p.shoulderLPitch = g.poleArmDeg * 0.6 * DEG + Math.sin(c.stride + Math.PI) * 10 * DEG * L;
+  p.shoulderLRoll = 10 * DEG;
+  p.jawOpen *= 0.6;
+}
+
+/**
+ * Gargantuar smash (FR8.3): both hands lift the pole overhead for the whole wind-up (leaning back), then a
+ * fast slam forward into a crouch at the impact, then a slow recovery.
+ */
+function smashPose(p: Pose, c: Ctx, timing: PoseTiming): void {
+  const g = c.a.gargantuar;
+  const t = c.input.attackClock ?? c.rawT;
+  const W = timing.attackWindup;
+  const slam = c.a.attack.lungeTime;
+  const R = Math.max(0.05, timing.attackRecover);
+  let arm = g.poleArmDeg;
+  let lean = g.leanDeg;
+  let crouch = 0;
+  if (t < W) {
+    const e = smooth01(t / W);
+    arm = lerp(g.poleArmDeg, g.smashRaiseDeg, e);
+    lean = lerp(g.leanDeg, g.smashLeanBackDeg, e);
+  } else if (t < W + slam) {
+    const e = 1 - Math.pow(1 - (t - W) / slam, 2);
+    arm = lerp(g.smashRaiseDeg, g.smashSlamDeg, e);
+    lean = lerp(g.smashLeanBackDeg, g.smashLeanDeg, e);
+    crouch = e;
+  } else if (t < W + slam + R) {
+    const e = smooth01((t - W - slam) / R);
+    arm = lerp(g.smashSlamDeg, g.poleArmDeg, e);
+    lean = lerp(g.smashLeanDeg, g.leanDeg, e);
+    crouch = 1 - e;
+  }
+  p.shoulderLPitch = arm * DEG;
+  p.shoulderRPitch = arm * DEG;
+  p.shoulderLRoll = -6 * DEG;
+  p.shoulderRRoll = -6 * DEG;
+  p.elbowL = 25 * DEG;
+  p.elbowR = 25 * DEG;
+  p.spinePitch = lean * DEG;
+  p.pelvisPitch = lean * 0.2 * DEG;
+  p.hipLPitch += crouch * g.smashCrouchDeg * DEG;
+  p.hipRPitch += crouch * g.smashCrouchDeg * DEG;
+  p.kneeL += crouch * g.smashCrouchDeg * 1.6 * DEG;
+  p.kneeR += crouch * g.smashCrouchDeg * 1.6 * DEG;
+  p.jawOpen = (0.3 + 0.7 * crouch) * c.a.attack.jawOpenDeg * DEG;
+}
+
+/** Gargantuar imp throw (FR8.4): the left hand reaches back over the shoulder, then flings forward. */
+function throwPose(p: Pose, c: Ctx): void {
+  const g = c.a.gargantuar;
+  const t = c.input.throwClock;
+  if (t === null || t === undefined || !(t >= 0) || t >= g.throwTime) return;
+  const u = t / g.throwTime;
+  const reach = u < 0.5 ? smooth01(u / 0.5) : 1 - smooth01((u - 0.5) / 0.5);
+  const arm = u < 0.5 ? lerp(p.shoulderLPitch / DEG, g.throwBackDeg, smooth01(u / 0.5)) : lerp(g.throwBackDeg, g.throwReleaseDeg, smooth01((u - 0.5) / 0.3));
+  p.shoulderLPitch = arm * DEG;
+  p.elbowL = (40 + 50 * reach) * DEG;
+  p.spineYaw += (u < 0.5 ? -1 : 1) * 15 * DEG * reach;
+  p.spinePitch -= 8 * DEG * reach;
+}
+
+/** Imp: low, fast scurry with long strides, a bounce and pumping arms. */
+function impStyle(p: Pose, c: Ctx): void {
+  const m = c.a.imp;
+  const L = c.loco;
+  p.hipLPitch *= m.hipSwingScale;
+  p.hipRPitch *= m.hipSwingScale;
+  p.rootY += Math.abs(Math.sin(c.stride)) * m.bounce * L;
+  p.spinePitch = m.leanDeg * DEG;
+  p.neckPitch = -m.leanDeg * 0.5 * DEG;
+  p.shoulderLPitch = 15 * DEG + Math.sin(c.stride + Math.PI) * m.armPumpDeg * DEG * L;
+  p.shoulderRPitch = 15 * DEG + Math.sin(c.stride) * m.armPumpDeg * DEG * L;
+  p.elbowL = m.elbowDeg * DEG;
+  p.elbowR = m.elbowDeg * DEG;
 }
 
 /** Newspaper zombie after the rage: sprinting with longer strides and pumping fists (run cadence). */

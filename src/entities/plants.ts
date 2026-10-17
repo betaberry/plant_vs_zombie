@@ -259,7 +259,7 @@ export class PlantManager {
     if (!zombie) return;
     p.firedAt.set(firedAt, this.time);
     const ice = p.type === 'ice_shooter_plant' ? { percent: def.slowPercent ?? 0, duration: def.slowDuration ?? 0 } : null;
-    this.d.commands.dispatch({ type: 'damage', target: zombie, amount: def.attackDamage ?? 0, info: { source: 'plant', byPlant: true, from: p.pos, slow: ice } });
+    this.d.commands.dispatch({ type: 'damage', target: zombie, amount: def.attackDamage ?? 0, info: { source: 'plant', byPlant: true, from: p.pos, slow: ice, attackerId: p.attackableId } });
     store.events.emit('plantFired', { pos: head, ice: ice !== null });
     this.d.zombies.noise('plantFire', p.pos);
     // Pea trail so the player can see the plant working (TR-PLT-02).

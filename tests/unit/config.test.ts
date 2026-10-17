@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hotbarKindsFor, validateConfig } from '../../src/config/validate';
 import type { ShopItem } from '../../src/config/types';
-import { rawConfig } from './helpers';
+import { rawConfig, rawMaps } from './helpers';
 
 type AnyObj = Record<string, any>;
 
@@ -61,14 +61,27 @@ describe('validateConfig (TR-CFG-01/02/05)', () => {
   it('rejects incomplete armour, unknown spawn types and bad spawn weights', () => {
     const raw = rawConfig();
     delete (raw.zombies as AnyObj).buckethead_zombie.armor.protects;
-    (raw.map as AnyObj).zombieSpawners[0].type = 'ghost_zombie';
-    (raw.map as AnyObj).districtZombieTypes.start = { basic_zombie: -1, imp_zombie: 0 };
+    rawMaps(raw).city_01.zombieSpawners[0].type = 'ghost_zombie';
+    rawMaps(raw).city_01.districtZombieTypes.start = { basic_zombie: -1, imp_zombie: 0 };
     const errors = validateConfig(raw);
     expect(errors.some((e) => e.includes('buckethead_zombie.armor.protects'))).toBe(true);
     expect(errors.some((e) => e.includes('ghost_zombie'))).toBe(true);
     expect(errors.some((e) => e.includes('districtZombieTypes.start') && e.includes('imp_zombie'))).toBe(true);
     expect(errors.some((e) => e.includes('districtZombieTypes.start.basic_zombie') && e.includes('不能为负'))).toBe(true);
     expect(errors.some((e) => e.includes('districtZombieTypes.start') && e.includes('总和'))).toBe(true);
+  });
+
+  it('keeps the practice city map rules and rejects guard-only types in its spawn tables (NFR2 / FR8.5)', () => {
+    const raw = rawConfig();
+    const city = rawMaps(raw).city_01;
+    city.zombieSpawners.splice(11);
+    city.districtZombieTypes.start = { basic_zombie: 1, gargantuar_zombie: 1 };
+    const errors = validateConfig(raw);
+    expect(errors).toContain('maps.city_01: 僵尸刷怪点至少 12 个');
+    expect(errors.some((e) => e.includes('districtZombieTypes.start') && e.includes('gargantuar_zombie') && e.includes('仅限守卫模式'))).toBe(true);
+    const missing = rawConfig();
+    delete rawMaps(missing).city_01;
+    expect(validateConfig(missing)).toContain('maps.city_01: 缺失');
   });
 
   it('counts only enabled hotbar categories per character', () => {

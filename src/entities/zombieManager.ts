@@ -89,12 +89,13 @@ export class ZombieManager {
     return out;
   }
 
-  spawn(pos: Vec3Like, opts: { ambush: boolean; spawnerId: string | null; patrol: Vec3Like[] | null; typeId?: string }): Zombie | null {
+  /** `jitter` overrides the random spawn offset (0 = exactly at `pos`, e.g. a thrown imp's checked landing point). */
+  spawn(pos: Vec3Like, opts: { ambush: boolean; spawnerId: string | null; patrol: Vec3Like[] | null; typeId?: string; jitter?: number }): Zombie | null {
     if (this.zombies.length >= CAPACITY) return null;
     const zombies = store.config.zombies;
     const def = zombies[opts.typeId ?? ''] ?? zombies[store.config.game.spawnDirector.defaultZombieType]!;
     const id = `zombie_${++this.seq}`;
-    const jitter = opts.ambush ? 0.8 : 2;
+    const jitter = opts.jitter ?? (opts.ambush ? 0.8 : 2);
     const spawn = { x: pos.x + this.world.rng.range(-jitter, jitter), y: pos.y + 0.05, z: pos.z + this.world.rng.range(-jitter, jitter) };
     const z = new Zombie(id, def, spawn, pos, opts.ambush, opts.patrol, { ...this.world, neighbors: (self) => this.neighbors(self) });
     // Two draws from the seeded world PRNG (same count as the old shirt/skin picks) seed the look.
@@ -187,6 +188,8 @@ export class ZombieManager {
     for (const a of v.rig.look.accessories) {
       let shown = armorParts.includes(a) ? intact : true;
       if (a === 'pole') shown = vault?.phase !== 'done';
+      // Guard mode: the imp leaves the gargantuar's back when it is thrown (FR8.4).
+      if (a === 'impRider') shown = z.impCarried;
       for (const part of accessoryParts(a)) {
         const variant = a !== 'cone' || (part === 'coneDented') === dented;
         this.rig.setAccessoryShown(v.rig, part, shown && variant);
@@ -207,6 +210,8 @@ export class ZombieManager {
       case 'screendoor': return z.armorIntact() ? 'screendoor' : 'normal';
       case 'football': return z.charging ? 'charge' : 'normal';
       case 'pole': return z.abilities.vault?.phase === 'carrying' ? 'pole' : 'normal';
+      case 'gargantuar': return 'heavy';
+      case 'imp': return 'imp';
       default: return 'normal';
     }
   }
@@ -245,7 +250,9 @@ export class ZombieManager {
 
   private poseInput(z: Zombie, input: PoseInput, playerPos: Vec3Like, simple: boolean): PoseInput {
     input.state = z.state;
-    input.moveSpeed = z.moveSpeed;
+    // Stride cadence is per rig unit: a ×2 gargantuar takes half as many steps, a ×0.6 imp scurries.
+    input.moveSpeed = z.moveSpeed / (z.def.visual.bodyScale ?? 1);
+    input.throwClock = z.throwClock;
     input.slowFactor = z.slowTimer > 0 ? 1 - z.slowPercent / 100 : 1;
     input.rooted = z.rootTimer > 0;
     const tracking = (z.state === 'ALERT' || z.state === 'CHASE' || z.state === 'ATTACK') && !z.currentPlantId;

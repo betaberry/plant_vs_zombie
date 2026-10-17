@@ -33,6 +33,15 @@ import { Player } from '../entities/player';
 import { PeaGun, type ShootTarget } from '../entities/weapon';
 import { ZombieManager } from '../entities/zombieManager';
 import type { Input } from './input';
+import type { DifficultyId } from '../config/types';
+import { CoreHouse } from '../entities/coreHouse';
+import type { Zombie } from '../entities/zombie';
+import type { SmashHit, SmashTarget } from '../logic/bossAbilities';
+import { scaledSunIncome, scaledZombieHealth } from '../logic/guardRules';
+import { writeGuardSave, type GuardSaveData } from '../logic/guardSave';
+import type { RingLayout } from '../world/ringLayout';
+import { GuardRun } from './guardRun';
+import type { GameMode } from './world';
 
 export interface SessionDeps {
   renderer: GameRenderer;
@@ -43,7 +52,12 @@ export interface SessionDeps {
   input: Input;
   storage: StorageLike;
   characterId: string;
+  /** Practice mode save to resume (null in guard mode). */
   resume: SaveData | null;
+  /** Default 'practice': the original city vertical slice, unchanged. */
+  mode?: GameMode;
+  /** Guard mode: ring layout, difficulty and an optional guard save to resume (FR11.3). */
+  guard?: { ring: RingLayout; difficulty: DifficultyId; resume: GuardSaveData | null };
 }
 
 export type PendingAction = { kind: 'heal'; amount: number; timer: number } | { kind: 'shovel'; plantId: string; timer: number } | null;
@@ -72,7 +86,14 @@ export class Session {
   readonly viewModel = new ViewModel();
   readonly preview: PlantPreview;
   readonly pickups: PickupManager;
-  readonly dummy: TrainingDummy;
+  /** Practice only (guard mode has no training dummy). */
+  readonly dummy: TrainingDummy | null;
+  readonly mode: GameMode;
+  /** Guard mode run state (waves, failure, victory); null in practice mode. */
+  readonly guard: GuardRun | null = null;
+  readonly core: CoreHouse | null = null;
+  /** Render-only camera shake (boss smash), decays per frame. */
+  private shake = 0;
   readonly wallet: SunWallet;
   readonly inventory: Inventory;
   readonly potions: PotionState = createPotionState();
@@ -110,12 +131,23 @@ export class Session {
     this.particles = new Particles(scene, this.rng);
     this.decals = new Decals(scene);
     this.preview = new PlantPreview(scene);
-    const spawn = d.resume ? this.pickSpawn() : resolvePlace(d.layout, { pos: cfg.map.playerSpawns[0]!.pos });
+    this.mode = d.mode ?? 'practice';
+    const g = this.mode === 'guard' ? d.guard ?? null : null;
+    if (this.mode === 'guard' && !g) throw new Error('guard mode needs a ring layout and a difficulty');
+    const spawn = g ? g.ring.playerSpawns[0]! : d.resume ? this.pickSpawn() : resolvePlace(d.layout, { pos: cfg.maps.city_01.playerSpawns[0]!.pos });
     this.player = new Player(d.phys, character, spawn, window.innerWidth / window.innerHeight);
     scene.add(this.player.camera);
     this.wallet = createWallet(character.startingSun, cfg.game.economy.sunCap);
     this.inventory = createInventory(cfg.game.inventory.hotbarSlots);
     const hasLOS = (a: Vec3Like, b: Vec3Like): boolean => hasLineOfSight(d.phys, a, b);
+    if (g) {
+      const diff = cfg.challenge.difficulties[g.difficulty];
+      this.core = new CoreHouse(scene, d.phys, this.particles, {
+        rect: g.ring.core.rect, height: g.ring.core.height, doorWidth: cfg.maps.ring_01.core.doorWidth,
+        maxHealth: diff.coreHealth, health: g.resume?.coreHealth ?? diff.coreHealth, stages: cfg.challenge.core,
+      });
+    }
+    const core = this.core;
     this.zombies = new ZombieManager(scene, {
       phys: d.phys, nav: d.nav, layout: d.layout, rng: this.rng, commands: this.commands, player: this.player,
       targetPlants: (id) => this.plants.targetPlants(id),
@@ -123,6 +155,15 @@ export class Session {
       nutWallNear: (pos, r) => this.plants.nutWallNear(pos, r),
       openDoorsNear: (pos, r) => d.city.openDoorsNear(pos, r),
       hasLOS,
+      guard: g && core ? {
+        core,
+        difficulty: cfg.challenge.difficulties[g.difficulty],
+        radii: cfg.challenge.targeting,
+        smashTargets: () => this.smashTargets(),
+        applySmash: (z, impact, hits) => this.applySmash(z, impact, hits),
+        throwImp: (z, to) => this.throwImp(z, to),
+        isWalkable: (p) => this.guard?.isWalkable(p) ?? false,
+      } : null,
     });
     this.plants = new PlantManager({
       scene, phys: d.phys, nav: d.nav, commands: this.commands, zombies: this.zombies, particles: this.particles, hasLOS,
@@ -134,13 +175,26 @@ export class Session {
       resolveTarget: (id) => this.resolveTarget(id),
       onGunshot: (pos) => this.zombies.noise('gunshot', pos),
     }, cfg.weapons.pea_gun.magazineSize, character.startingReserveAmmo) : null;
-    this.dummy = new TrainingDummy(scene, d.phys, resolvePlace(d.layout, { pos: cfg.map.trainingDummy }));
-    this.pickups = new PickupManager(scene, cfg.map.pickupPoints.map((def) => ({ def, pos: resolvePlace(d.layout, def) })), cfg.game.economy.sunPackLifetime);
+    // Guard mode: no training dummy, no supply crates / sun packs, no city ambushes (FR1.4).
+    this.dummy = g ? null : new TrainingDummy(scene, d.phys, resolvePlace(d.layout, { pos: cfg.maps.city_01.trainingDummy }));
+    const pickupPoints = g ? [] : cfg.maps.city_01.pickupPoints.map((def) => ({ def, pos: resolvePlace(d.layout, def) }));
+    this.pickups = new PickupManager(scene, pickupPoints, cfg.game.economy.sunPackLifetime);
     this.registerCommands();
     this.registerEvents();
-    if (d.resume) this.applySave(d.resume);
-    else for (const [id, n] of Object.entries(character.startingItems)) addItem(this.inventory, id, n, this.shopItem(id)?.maxCarry ?? null);
-    this.spawnAmbushers();
+    if (g && core) {
+      this.guard = new GuardRun({
+        ring: g.ring, difficultyId: g.difficulty, core, commands: this.commands, zombies: this.zombies, player: this.player, rng: this.rng,
+        phys: d.phys, startWave: g.resume?.wave ?? 1, onWaveCleared: () => this.save(),
+      });
+      if (g.resume) this.applyGuardSave(g.resume);
+      else this.giveStartingItems();
+      // Guard mode never shows the practice tutorial.
+      this.tutorialDone = true;
+    } else {
+      if (d.resume) this.applySave(d.resume);
+      else this.giveStartingItems();
+      this.spawnAmbushers();
+    }
     this.viewModel.show(this.gun ? 'gun' : 'hands');
     this.owned = scene.children.filter((c) => !before.has(c) && c !== this.player.camera);
   }
@@ -152,7 +206,52 @@ export class Session {
   }
 
   private resolveTarget(id: string): ShootTarget | undefined {
-    return id === 'dummy' ? this.dummy : this.zombies.get(id);
+    return id === 'dummy' ? this.dummy ?? undefined : this.zombies.get(id);
+  }
+
+  private giveStartingItems(): void {
+    for (const [id, n] of Object.entries(this.character.startingItems)) addItem(this.inventory, id, n, this.shopItem(id)?.maxCarry ?? null);
+  }
+
+  // ---------- guard mode hooks (FR8.3 / FR8.4) ----------
+
+  private smashTargets(): SmashTarget[] {
+    const out: SmashTarget[] = [];
+    for (const p of this.plants.plants.values()) {
+      if (p.alive) out.push({ id: p.attackableId, kind: 'plant', pos: p.pos, health: p.health, extent: p.def.footprintRadius });
+    }
+    if (this.core?.isAlive()) out.push({ id: 'core', kind: 'core', pos: this.core.center, health: this.core.health, extent: this.core.extent });
+    if (this.player.isAlive()) out.push({ id: 'player', kind: 'player', pos: this.player.position(), health: this.player.health, extent: 0 });
+    return out;
+  }
+
+  private applySmash(z: Zombie, impact: Vec3Like, hits: SmashHit[]): void {
+    const radius = z.def.abilities?.smash?.radius ?? 0;
+    store.events.emit('bossSmash', { pos: impact, radius });
+    this.particles.emit('impact', { x: impact.x, y: impact.y + 0.1, z: impact.z });
+    const d = distXZ(impact, this.player.position());
+    this.shake = Math.max(this.shake, Math.max(0, 1 - d / 25));
+    for (const h of hits) {
+      const info = { source: 'zombie' as const, from: z.pos };
+      if (h.kind === 'core' && this.core) this.commands.dispatch({ type: 'damage', target: this.core, amount: h.damage, info });
+      else if (h.kind === 'player') this.commands.dispatch({ type: 'damage', target: this.player, amount: h.damage, info });
+      else {
+        const plant = this.plants.byId(h.id);
+        if (plant) this.commands.dispatch({ type: 'damage', target: plant, amount: h.damage, info });
+      }
+    }
+  }
+
+  private throwImp(z: Zombie, to: Vec3Like): void {
+    store.events.emit('impThrown', { from: { ...z.pos }, to: { ...to } });
+    this.guard?.throwImp(to);
+  }
+
+  /** Boss currently on the field (HUD BOSS bar), if any. */
+  boss(): Zombie | null {
+    const id = this.guard?.bossId;
+    const z = id ? this.zombies.get(id) : undefined;
+    return z && z.isAlive() ? z : null;
   }
 
   private shopContext(): ShopContext {
@@ -166,8 +265,17 @@ export class Session {
     const c = this.commands;
     c.register('damage', (cmd) => cmd.target.applyDamage(cmd.amount, cmd.info));
     c.register('spawn', (cmd) => {
-      const patrol = cmd.patrolRoute ? store.config.map.patrolRoutes.find((r) => r.id === cmd.patrolRoute)?.waypoints.map(([x, y, z]) => ({ x, y, z })) ?? null : null;
-      return this.zombies.spawn(cmd.pos, { ambush: cmd.ambush, spawnerId: cmd.spawnerId, patrol, typeId: cmd.zombieType }) !== null;
+      const patrol = cmd.patrolRoute ? store.config.maps.city_01.patrolRoutes.find((r) => r.id === cmd.patrolRoute)?.waypoints.map(([x, y, z]) => ({ x, y, z })) ?? null : null;
+      const z = this.zombies.spawn(cmd.pos, { ambush: cmd.ambush, spawnerId: cmd.spawnerId, patrol, typeId: cmd.zombieType, jitter: cmd.jitter });
+      if (z && this.guard && cmd.guardWave) {
+        // FR5.2 / FR8.2: difficulty health multiplier; the boss uses its own per-difficulty health.
+        z.setMaxHealth(scaledZombieHealth(z.def, this.guard.difficulty, cmd.guardWave.boss));
+        if (cmd.guardWave.boss) {
+          this.guard.bossId = z.attackableId;
+          store.events.emit('bossSpawned', { zombieId: z.attackableId });
+        }
+      }
+      return z !== null;
     });
     c.register('plant', (cmd) => {
       const def = store.config.plants.plants[cmd.plantType];
@@ -227,7 +335,9 @@ export class Session {
     store.events.emit('banner', { text: S.bannerAmmoOut, kind: 'danger' });
   }
 
-  private gainSun(amount: number, showFloat: boolean, floatText: (applied: number) => string = (n) => `+${n}`): void {
+  private gainSun(rawAmount: number, showFloat: boolean, floatText: (applied: number) => string = (n) => `+${n}`): void {
+    // FR5.2: guard difficulty scales every sun income (kills, sunflowers, passive).
+    const amount = this.guard ? scaledSunIncome(rawAmount, this.guard.difficulty) : rawAmount;
     const before = displaySun(this.wallet);
     const res = addSun(this.wallet, amount);
     this.stats.sunEarned += res.applied;
@@ -239,7 +349,7 @@ export class Session {
   }
 
   private spawnAmbushers(): void {
-    for (const a of store.config.map.ambushPoints) {
+    for (const a of store.config.maps.city_01.ambushPoints) {
       const pos = resolvePlace(this.d.layout, a);
       for (let i = 0; i < a.count; i++) this.commands.dispatch({ type: 'spawn', spawnerId: null, pos, ambush: true });
     }
@@ -247,7 +357,10 @@ export class Session {
 
   /** FR-HP-05: respawn at the spawn point with the fewest zombies nearby. */
   pickSpawn(): Vec3Like {
-    const spawns = store.config.map.playerSpawns.map((s) => resolvePlace(this.d.layout, { pos: s.pos }));
+    // Guard mode: the ring's spawn points in the plaza around the core (outside every wall).
+    const spawns = this.mode === 'guard' && this.d.guard
+      ? this.d.guard.ring.playerSpawns.map((s) => ({ ...s }))
+      : store.config.maps.city_01.playerSpawns.map((s) => resolvePlace(this.d.layout, { pos: s.pos }));
     let best = spawns[0]!;
     let bestN = Infinity;
     for (const s of spawns) {
@@ -313,7 +426,8 @@ export class Session {
     const look = input.consumeMouse();
     p.look(look.dx, look.dy);
     this.handleKeys(input);
-    if (p.update(dt, input)) this.respawn();
+    // Guard mode: no 3 s respawn — a dead player stays down and the wave fails (FR6.2).
+    if (p.update(dt, input) && !this.guard) this.respawn();
     if (p.isOutOfWorld()) p.teleport(this.pickSpawn());
     this.updatePending(dt);
     this.updateHeld(dt, input);
@@ -330,10 +444,11 @@ export class Session {
         store.events.emit('footstep', { pos: p.position(), running: true });
       }
     }
-    this.runDirector(dt);
+    if (this.guard) this.guard.update(dt, p.camera);
+    else this.runDirector(dt);
     this.zombies.update(dt);
     this.plants.update(dt);
-    this.dummy.update(dt);
+    this.dummy?.update(dt);
     for (const s of this.pickups.update(dt, p.position(), eco.sunPackPickupRadius)) {
       this.gainSun(eco.sunPackAmount, true);
       store.events.emit('pickup', { item: s.item });
@@ -452,7 +567,10 @@ export class Session {
       for (const z of this.zombies.zombies) if (z.isAlive()) occupied.push({ pos: z.pos, radius: z.def.colliderRadius });
     }
     occupied.push({ pos: this.player.position(), radius: cfg.game.movement.capsuleRadius });
-    const zones = { plantable: cfg.map.plantableZones, blocked: [...cfg.map.nonPlantableZones, ...this.d.layout.extraNoPlantZones] };
+    const ring = this.mode === 'guard' ? this.d.guard?.ring : undefined;
+    const zones = ring
+      ? { plantable: ring.plantableZones, blocked: ring.extraNoPlantZones }
+      : { plantable: cfg.maps.city_01.plantableZones, blocked: [...cfg.maps.city_01.nonPlantableZones, ...this.d.layout.extraNoPlantZones] };
     const check: PlantCheck = pos
       ? canPlantAt(pos, { characterId: this.character.id, playerPos: this.player.position(), plant: def, rules: cfg.plants.plantingRules, aliveOfType: this.plants.countOf(type), ground, zones, occupied })
       : { ok: false, reason: 'no_ground' };
@@ -467,7 +585,7 @@ export class Session {
   }
 
   /** FR-MAP-15: highlight plantable ground cells within the placement radius. */
-  private plantableCells(zones: { plantable: typeof store.config.map.plantableZones; blocked: typeof store.config.map.nonPlantableZones }): Vec3Like[] {
+  private plantableCells(zones: { plantable: typeof store.config.maps.city_01.plantableZones; blocked: typeof store.config.maps.city_01.nonPlantableZones }): Vec3Like[] {
     const r = store.config.plants.plantingRules;
     const c = this.player.position();
     const out: Vec3Like[] = [];
@@ -513,6 +631,12 @@ export class Session {
     const p = this.player;
     this.interactPrompt = null;
     if (!p.isAlive()) return;
+    // Guard mode: between waves F starts the next wave and takes priority over any interaction (FR4.1).
+    if (this.guard?.between) {
+      this.interactPrompt = S.guardStartWaveHint;
+      if (input.wasPressed('KeyF')) this.guard.requestStart();
+      return;
+    }
     const range = store.config.game.movement.interactRange;
     const pos = p.position();
     const crate = this.pickups.nearestCrate(pos, range);
@@ -535,13 +659,13 @@ export class Session {
     const cam = p.camera;
     cam.updateMatrixWorld();
     const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
-    const spawners = cfg.map.zombieSpawners.map((s) => {
+    const spawners = cfg.maps.city_01.zombieSpawners.map((s) => {
       const sp = resolvePlace(this.d.layout, s);
-      return { id: s.id, pos: sp, district: districtAt(cfg.map, sp) ?? '', maxAlive: s.maxAlive, respawnCooldown: s.respawnCooldown, activationRadius: s.activationRadius, alive: this.zombies.aliveFromSpawner(s.id) };
+      return { id: s.id, pos: sp, district: districtAt(cfg.maps.city_01, sp) ?? '', maxAlive: s.maxAlive, respawnCooldown: s.respawnCooldown, activationRadius: s.activationRadius, alive: this.zombies.aliveFromSpawner(s.id) };
     });
     const ids = stepDirector(this.director, {
       playerPos: pos,
-      playerDistrict: districtAt(cfg.map, pos),
+      playerDistrict: districtAt(cfg.maps.city_01, pos),
       spawners,
       totalAlive: this.zombies.aliveCount,
       plantPositions: this.plants.positions(),
@@ -555,9 +679,9 @@ export class Session {
     const level = pressureLevel(this.director.elapsed, cfg.game.spawnDirector);
     const aliveByType = this.zombies.aliveByType();
     for (const id of ids) {
-      const def = cfg.map.zombieSpawners.find((s) => s.id === id)!;
+      const def = cfg.maps.city_01.zombieSpawners.find((s) => s.id === id)!;
       const sp = spawners.find((s) => s.id === id)!;
-      const zombieType = chooseZombieType(sp.district || null, level, aliveByType, cfg.map.districtZombieTypes, cfg.game.spawnDirector, this.rng.next());
+      const zombieType = chooseZombieType(sp.district || null, level, aliveByType, cfg.maps.city_01.districtZombieTypes, cfg.game.spawnDirector, this.rng.next());
       if (zombieType === null) continue;
       aliveByType[zombieType] = (aliveByType[zombieType] ?? 0) + 1;
       this.commands.dispatch({ type: 'spawn', spawnerId: id, pos: sp.pos, ambush: def.mode === 'indoor', patrolRoute: def.patrolRoute, zombieType });
@@ -596,6 +720,15 @@ export class Session {
   render(alpha: number, frameDt: number): void {
     const p = this.player;
     p.updateCamera(alpha, frameDt);
+    if (this.shake > 0) {
+      // Boss smash camera shake (FR8.3), render-only.
+      const a = this.shake * 0.12;
+      p.camera.position.x += (Math.random() - 0.5) * a;
+      p.camera.position.y += (Math.random() - 0.5) * a;
+      p.camera.rotation.z += (Math.random() - 0.5) * a * 0.3;
+      this.shake = Math.max(0, this.shake - frameDt * 2.5);
+    }
+    this.core?.render(frameDt);
     this.d.renderer.followShadows(p.camera.position.x, p.camera.position.z);
     this.zombies.render(alpha, p.camera.position, frameDt);
     this.plants.render();
@@ -651,7 +784,85 @@ export class Session {
     };
   }
 
+  // ---------- guard mode save / restart (FR6, FR11) ----------
+
+  private applyGuardSave(s: GuardSaveData): void {
+    this.wallet.sun = Math.min(this.wallet.cap, s.sun);
+    for (const [id, n] of Object.entries(s.items)) addItem(this.inventory, id, n, this.shopItem(id)?.maxCarry ?? null);
+    if (this.gun) {
+      this.gun.ammo.mag = Math.min(this.gun.ammo.magSize, s.magAmmo);
+      this.gun.ammo.reserve = Math.min(this.gun.ammo.reserveMax, s.reserveAmmo);
+    }
+    this.upgrades.damageBonus = s.upgrades.damageBonus;
+    this.upgrades.sunBonus = s.upgrades.sunBonus;
+    for (const e of s.ownedEquipment) this.ownedEquipment.add(e);
+    const potion = s.potion ? this.shopItem(s.potion.itemId) : undefined;
+    if (potion && s.potion && potion.category === 'potion') {
+      drinkPotion(this.potions, potion);
+      if (this.potions.active) this.potions.active.remaining = Math.min(this.potions.active.duration, s.potion.remainingSeconds);
+    }
+    for (const pl of s.plants) {
+      if (store.config.plants.plants[pl.type]) this.plants.place(pl.type, { x: pl.pos[0], y: pl.pos[1], z: pl.pos[2] }, pl.yaw, pl.health);
+    }
+    this.playTime = s.playTimeSeconds;
+    if (this.guard) this.guard.elapsed = s.playTimeSeconds;
+  }
+
+  buildGuardSave(): GuardSaveData | null {
+    const g = this.guard;
+    const core = this.core;
+    const spec = this.d.guard;
+    if (!g || !core || !spec || !core.isAlive()) return null;
+    const pot = this.potions.active;
+    return {
+      version: 1,
+      difficulty: spec.difficulty,
+      characterId: this.character.id,
+      wave: g.state.wave,
+      coreHealth: core.health,
+      sun: this.wallet.sun,
+      items: { ...this.inventory.counts },
+      magAmmo: this.gun?.ammo.mag ?? 0,
+      reserveAmmo: this.gun?.ammo.reserve ?? 0,
+      upgrades: { ...this.upgrades },
+      ownedEquipment: [...this.ownedEquipment],
+      potion: pot ? { itemId: pot.id, remainingSeconds: pot.remaining } : null,
+      plants: this.plants.serialize(),
+      playTimeSeconds: g.elapsed,
+      savedAt: Date.now(),
+    };
+  }
+
+  /**
+   * FR6.3: 「重开当前波」. Plants, sun, upgrades, potion, items stay; the wave's zombies go; the core keeps its
+   * health unless it was destroyed (then back to its wave-start value); the player comes back on a ring spawn.
+   */
+  restartWave(): void {
+    const g = this.guard;
+    if (!g || !g.failure) return;
+    g.restart({
+      wave: g.state.wave, difficulty: this.d.guard!.difficulty, coreHealth: this.core!.health, sun: this.wallet.sun,
+      items: { ...this.inventory.counts }, upgrades: { ...this.upgrades }, ownedEquipment: [...this.ownedEquipment],
+      potion: this.potions.active ? { itemId: this.potions.active.id, remainingSeconds: this.potions.active.remaining } : null,
+      plants: this.plants.serialize(), zombies: [], drops: [],
+    });
+    this.pending = null;
+    this.player.respawnAt(this.pickSpawn());
+    this.life = { start: this.playTime, kills: 0, sun: 0, planted: 0 };
+    this.save();
+  }
+
   save(): boolean {
+    if (this.guard) {
+      // Victory deletes the guard save (FR11.4); a destroyed core is never saved.
+      if (this.guard.victory) return true;
+      const data = this.buildGuardSave();
+      if (!data) return false;
+      const res = writeGuardSave(this.d.storage, data);
+      store.events.emit('saved', { ok: res.ok });
+      if (!res.ok) store.events.emit('banner', { text: S.bannerSaveFailed, kind: 'danger' });
+      return res.ok;
+    }
     const res = writeSave(this.d.storage, this.buildSave());
     store.events.emit('saved', { ok: res.ok });
     if (!res.ok) store.events.emit('banner', { text: S.bannerSaveFailed, kind: 'danger' });
@@ -663,7 +874,8 @@ export class Session {
     this.zombies.dispose();
     this.plants.clear();
     this.d.phys.removeBody(this.player.body);
-    this.d.phys.removeBody(this.dummy.body);
+    if (this.dummy) this.d.phys.removeBody(this.dummy.body);
+    this.core?.dispose();
     for (const o of this.owned) o.removeFromParent();
     this.owned = [];
   }

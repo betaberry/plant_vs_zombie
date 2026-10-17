@@ -147,3 +147,19 @@ select { font: inherit; padding: 0.2em 0.5em; border-radius: 6px; }
 .shop .toast { min-height: 1.4em; color: #ffcc80; font-weight: 800; }
 .shop footer { display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; opacity: 0.85; }
 .shop footer button { min-width: 0; }
+
+/* ---------- 守卫模式 (guard mode) ---------- */
+.mode-card { display: flex; flex-direction: column; align-items: center; gap: 0.4em; padding: 0.8em 1em; max-width: 22em; }
+.mode-card .note { font-size: 0.85em; text-align: center; }
+.guard-panel { position: absolute; left: 50%; top: 0.8em; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 0.35em; text-shadow: 0 2px 4px #000; }
+.guard-panel .wave { font-size: 1.5em; font-weight: 800; }
+.guard-panel .sub { font-size: 1.05em; }
+.guard-panel .start { font-size: 1.1em; font-weight: 700; color: #fff176; animation: pulse 1.2s infinite; }
+.guard-bar { display: flex; align-items: center; gap: 0.5em; font-weight: 700; }
+.guard-bar .bar { width: 22em; height: 1em; background: rgba(0, 0, 0, 0.5); border-radius: 6px; overflow: hidden; border: 2px solid rgba(255, 255, 255, 0.35); }
+.guard-bar .bar > div { height: 100%; background: linear-gradient(90deg, #42a5f5, #80deea); transition: width 0.2s; }
+.guard-bar .num { min-width: 6em; }
+.guard-bar.core.low .bar > div { background: var(--red); animation: pulse 0.6s infinite; }
+.guard-bar.core.low .label { color: var(--red); animation: pulse 0.6s infinite; }
+.guard-bar.boss .bar { width: 30em; border-color: rgba(255, 82, 82, 0.6); }
+.guard-bar.boss .bar > div { background: linear-gradient(90deg, #b71c1c, #ff7043); }

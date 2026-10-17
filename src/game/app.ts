@@ -1,34 +1,37 @@
-// Application shell: boot (config → physics → city → nav → audio), UI state machine and the main loop.
+// Application shell: boot (config → physics → map → nav → audio), UI state machine and the main loop.
+// Two game modes (FR1): practice (the original city) and guard (ring map + core + waves). The map is built
+// per mode and the previous one disposed when the mode changes.
 import * as THREE from 'three';
 import { AudioManager } from '../audio/audioManager';
 import { enableConfigHotReload, loadConfig } from '../config/loader';
+import type { DifficultyId } from '../config/types';
 import { GameLoop } from '../core/loop';
 import { SETTINGS_KEY, defaultSettings, parseSettings, store, type Settings } from '../core/store';
-import { deleteSave, readSave, resolveBrowserStorage, type ReadResult, type StorageLike } from '../logic/save';
-import { buildNavGraph } from '../nav/build';
-import type { NavGraph } from '../nav/graph';
+import { deleteGuardSave, readGuardSave, type GuardSaveData } from '../logic/guardSave';
+import { deleteSave, readSave, resolveBrowserStorage, type ReadResult, type SaveData, type StorageLike } from '../logic/save';
 import { PhysicsWorld } from '../physics/world';
 import { GameRenderer } from '../render/renderer';
 import { Hud } from '../ui/hud';
-import { characterSelect, confirmDialog, controlsScreen, errorScreen, loadingScreen, mainMenu, pauseMenu, settingsScreen } from '../ui/screens';
+import {
+  characterSelect, confirmDialog, controlsScreen, errorScreen, failScreen, guardMenu, loadingScreen, mainMenu, modeSelect, pauseMenu,
+  settingsScreen, victoryScreen,
+} from '../ui/screens';
 import { ShopPanel } from '../ui/shopPanel';
 import { S } from '../ui/strings.zh-CN';
-import { City } from '../world/cityBuilder';
-import { generateLayout, type CityLayout } from '../world/layout';
 import { distXZ } from '../logic/math';
 import { Input } from './input';
 import { Session } from './session';
+import { buildWorld, type GameMode, type GameWorld } from './world';
 
-type Mode = 'boot' | 'menu' | 'playing' | 'paused';
+/** over: guard mode failure / victory screen is up (no updates, no pause menu). */
+type Mode = 'boot' | 'menu' | 'playing' | 'paused' | 'over';
 
 export class App {
   private readonly ui: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private renderer!: GameRenderer;
   private phys!: PhysicsWorld;
-  private layout!: CityLayout;
-  private city!: City;
-  private nav!: NavGraph;
+  private world!: GameWorld;
   private input!: Input;
   private audio!: AudioManager;
   private loop!: GameLoop;
@@ -43,6 +46,8 @@ export class App {
   private lastFrame = performance.now();
   private readonly menuCamera = new THREE.PerspectiveCamera(60, 16 / 9, 0.5, 800);
   private menuT = 0;
+  /** Last guard run (「再来一局」 starts the same character and difficulty). */
+  private lastGuard: { characterId: string; difficulty: DifficultyId } | null = null;
 
   constructor() {
     const ui = document.getElementById('ui-root');
@@ -75,17 +80,7 @@ export class App {
       this.phys = await PhysicsWorld.create(m.gravity);
       this.renderer = new GameRenderer(this.canvas);
       loading.set(0.35, S.loadingCity);
-      this.layout = generateLayout(cfg.config.map);
-      this.city = new City(this.renderer.scene, this.phys, this.layout);
-      this.nav = buildNavGraph({
-        grid: cfg.config.map.waypointGraph.grid,
-        obstacles: this.layout.obstacles,
-        extraNodes: [...this.layout.navNodes, ...cfg.config.map.waypointGraph.nodes.map((n) => ({ key: n.id, pos: { x: n.pos[0], y: n.pos[1], z: n.pos[2] }, tag: 'outdoor' }))],
-        extraEdges: [...this.layout.navEdges, ...cfg.config.map.waypointGraph.edges],
-        doorLinks: this.layout.doorLinks.map((d) => ({ ...d, radius: cfg.config.map.waypointGraph.doorLinkRadius })),
-      });
-      const disconnected = this.nav.findDisconnected();
-      if (disconnected.length > 0) console.warn('[nav] 不连通航点：', disconnected.map((n) => `${n.key} (${n.x.toFixed(1)}, ${n.y.toFixed(1)}, ${n.z.toFixed(1)})`));
+      this.world = buildWorld('practice', cfg.config, this.renderer, this.phys);
       this.phys.step(cfg.config.game.loop.fixedDt);
       loading.set(0.6, S.loadingAudio);
       this.audio = new AudioManager(this.renderer.scene);
@@ -108,18 +103,31 @@ export class App {
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('beforeunload', () => this.session?.save());
     document.addEventListener('visibilitychange', () => document.hidden && this.session?.save());
+    store.events.on('guardFailed', (e) => this.onGuardFailed(e.reason, e.wave));
+    store.events.on('guardVictory', (e) => this.onGuardVictory(e));
     this.applySettings(store.settings);
     const g = cfg.config.game.loop;
     this.loop = new GameLoop(g.fixedDt, g.maxSubSteps, { update: (dt) => this.update(dt), render: (a, f) => this.render(a, f) });
     this.loop.start();
     this.resize();
-    this.showMainMenu();
+    this.showModeSelect();
   }
 
   /** Pointer Lock is granted asynchronously (and may be refused right after an Esc); show the hint until it arrives. */
   private lock(): void {
     this.input.requestLock();
     this.hud?.setPointerHint(!this.input.isLocked());
+  }
+
+  // ---------- world per mode ----------
+
+  /** Builds the requested map, disposing the other one (colliders, meshes, instanced pools). */
+  private ensureWorld(mode: GameMode): void {
+    if (this.world.mode === mode) return;
+    this.endSession();
+    this.world.dispose();
+    this.world = buildWorld(mode, store.config, this.renderer, this.phys);
+    this.phys.step(store.config.game.loop.fixedDt);
   }
 
   // ---------- screens ----------
@@ -145,6 +153,25 @@ export class App {
     return readSave(this.storage);
   }
 
+  private showModeSelect(): void {
+    this.mode = 'menu';
+    this.input.gameplayEnabled = false;
+    this.setScreen(modeSelect({
+      onPractice: () => {
+        this.audio.unlock();
+        this.showMainMenu();
+      },
+      onGuard: () => {
+        this.audio.unlock();
+        this.showGuardMenu();
+      },
+      onSettings: () => this.pushOverlay(this.settingsNode(false)),
+      onControls: () => this.pushOverlay(controlsScreen(() => this.popOverlay())),
+      note: this.persistent ? null : S.storageWarning,
+    }));
+  }
+
+  /** Practice mode menu (unchanged flow). */
   private showMainMenu(): void {
     this.mode = 'menu';
     this.input.gameplayEnabled = false;
@@ -161,7 +188,7 @@ export class App {
       onContinue: () => {
         this.audio.unlock();
         const s = this.saveStatus();
-        if (s.status === 'ok') this.startGame(s.data.characterId, s.data);
+        if (s.status === 'ok') this.startPractice(s.data.characterId, s.data);
       },
       onSettings: () => this.pushOverlay(this.settingsNode(false)),
       onControls: () => this.pushOverlay(controlsScreen(() => this.popOverlay())),
@@ -169,6 +196,7 @@ export class App {
         deleteSave(this.storage);
         this.showMainMenu();
       }, () => this.popOverlay())),
+      onBack: () => this.showModeSelect(),
     }));
   }
 
@@ -176,8 +204,46 @@ export class App {
     this.setScreen(characterSelect(store.config, (id) => {
       // 13.6-A: a new game resets everything, including permanent upgrades.
       deleteSave(this.storage);
-      this.startGame(id, null);
+      this.startPractice(id, null);
     }, () => this.showMainMenu()));
+  }
+
+  /** FR1.2 / FR1.3: guard submenu — continue, restart (confirmed), difficulty picker. */
+  private showGuardMenu(): void {
+    this.mode = 'menu';
+    this.input.gameplayEnabled = false;
+    const st = readGuardSave(this.storage);
+    const cfg = store.config.challenge;
+    const save = st.status === 'ok' ? st.data : null;
+    const note = st.status === 'incompatible' ? S.saveIncompatible : st.status === 'corrupt' ? S.saveCorrupt : null;
+    const confirmRestart = (then: () => void): void => {
+      this.pushOverlay(confirmDialog(S.guardConfirmRestartTitle, S.guardConfirmRestartBody, () => {
+        deleteGuardSave(this.storage);
+        then();
+      }, () => this.popOverlay()));
+    };
+    this.setScreen(guardMenu({
+      save: save ? { difficulty: save.difficulty, wave: save.wave, total: cfg.difficulties[save.difficulty].waves } : null,
+      saveNote: note,
+      difficulties: cfg.difficulties,
+      onContinue: () => {
+        const s = readGuardSave(this.storage);
+        if (s.status === 'ok') this.startGuard(s.data.characterId, s.data.difficulty, s.data);
+      },
+      onRestart: () => confirmRestart(() => this.showGuardMenu()),
+      onPick: (id) => {
+        if (save) confirmRestart(() => this.showGuardCharacterSelect(id));
+        else this.showGuardCharacterSelect(id);
+      },
+      onBack: () => this.showModeSelect(),
+    }));
+  }
+
+  private showGuardCharacterSelect(difficulty: DifficultyId): void {
+    this.setScreen(characterSelect(store.config, (id) => {
+      deleteGuardSave(this.storage);
+      this.startGuard(id, difficulty, null);
+    }, () => this.showGuardMenu()));
   }
 
   private settingsNode(overlay: boolean): HTMLElement {
@@ -198,16 +264,30 @@ export class App {
 
   // ---------- game lifecycle ----------
 
-  private startGame(characterId: string, resume: import('../logic/save').SaveData | null): void {
+  private startPractice(characterId: string, resume: SaveData | null): void {
+    this.ensureWorld('practice');
+    this.startSession(characterId, { resume, mode: 'practice' });
+  }
+
+  private startGuard(characterId: string, difficulty: DifficultyId, resume: GuardSaveData | null): void {
+    this.ensureWorld('guard');
+    const ring = this.world.ring;
+    if (!ring) return;
+    this.lastGuard = { characterId, difficulty };
+    this.startSession(characterId, { resume: null, mode: 'guard', guard: { ring, difficulty, resume } });
+  }
+
+  private startSession(characterId: string, extra: Pick<ConstructorParameters<typeof Session>[0], 'resume' | 'mode' | 'guard'>): void {
     this.endSession();
+    const w = this.world;
     try {
-      this.session = new Session({ renderer: this.renderer, phys: this.phys, city: this.city, layout: this.layout, nav: this.nav, input: this.input, storage: this.storage, characterId, resume });
+      this.session = new Session({ renderer: this.renderer, phys: this.phys, city: w.city, layout: w.layout, nav: w.nav, input: this.input, storage: this.storage, characterId, ...extra });
     } catch (err) {
       console.error('[game] 无法开始游戏：', err);
       this.setScreen(errorScreen(S.fatalError, [err instanceof Error ? err.message : String(err)], S.fatalHint));
       return;
     }
-    this.hud = new Hud(this.session, this.loop, this.renderer, this.nav, this.layout);
+    this.hud = new Hud(this.session, this.loop, this.renderer, w.nav, w.layout);
     this.hud.physMs = () => this.phys.lastStepMs;
     this.shop = new ShopPanel(this.session, () => this.toggleShop(false));
     this.shop.root.style.display = 'none';
@@ -238,7 +318,7 @@ export class App {
     this.input.exitLock();
     this.endSession();
     this.audio.stopMusic();
-    this.showMainMenu();
+    this.showModeSelect();
   }
 
   private pause(): void {
@@ -262,9 +342,53 @@ export class App {
     this.lock();
   }
 
+  /** Stops play for the failure / victory screen. */
+  private stopPlay(): void {
+    if (this.session?.shopOpen) this.toggleShop(false);
+    this.mode = 'over';
+    this.input.gameplayEnabled = false;
+    this.input.exitLock();
+    this.hud?.setPointerHint(false);
+  }
+
+  /** FR6.3 / FR10.2: failure screen → retry the current wave or leave. */
+  private onGuardFailed(reason: string, wave: number): void {
+    const s = this.session;
+    if (!s?.guard) return;
+    this.stopPlay();
+    this.pushOverlay(failScreen({
+      reason, wave, total: s.guard.totalWaves,
+      onRetry: () => {
+        this.popOverlay();
+        s.restartWave();
+        this.mode = 'playing';
+        this.input.gameplayEnabled = true;
+        this.lock();
+      },
+      onMenu: () => this.toMainMenu(),
+    }));
+  }
+
+  /** FR10.1 / FR11.4: 「守卫成功」, the guard save is deleted. */
+  private onGuardVictory(e: { difficulty: string; seconds: number; coreHealth: number; coreMax: number }): void {
+    if (!this.session?.guard) return;
+    deleteGuardSave(this.storage);
+    this.stopPlay();
+    this.pushOverlay(victoryScreen({
+      ...e,
+      onMenu: () => this.toMainMenu(),
+      onAgain: () => {
+        const last = this.lastGuard;
+        if (!last) return this.toMainMenu();
+        this.input.exitLock();
+        this.startGuard(last.characterId, last.difficulty, null);
+      },
+    }));
+  }
+
   private toggleShop(open: boolean): void {
     const s = this.session;
-    if (!s || !this.shop || this.mode !== 'playing') return;
+    if (!s || !this.shop || (this.mode !== 'playing' && open)) return;
     if (open === s.shopOpen) return;
     s.shopOpen = open;
     this.shop.root.style.display = open ? 'flex' : 'none';
@@ -277,6 +401,7 @@ export class App {
     } else {
       this.shop.close();
       this.audio.play2D('ui_close');
+      if (this.mode !== 'playing') return;
       this.input.gameplayEnabled = true;
       this.lock();
     }
@@ -292,7 +417,7 @@ export class App {
     else if (code === 'Escape' && this.session.shopOpen) this.toggleShop(false);
     else if (code === 'F3' && this.hud) {
       this.hud.showDebug = !this.hud.showDebug;
-      if (this.hud.showDebug) console.info('[nav] 不连通航点：', this.nav.findDisconnected().map((n) => n.key));
+      if (this.hud.showDebug) console.info('[nav] 不连通航点：', this.world.nav.findDisconnected().map((n) => n.key));
     } else if (code === 'F4' && this.hud) this.hud.showStates = !this.hud.showStates;
     else if (code === 'KeyH' && this.hud) this.hud.skipTutorial();
     else if (code === 'Tab' && this.hud) this.hud.tabHeld = true;
@@ -331,7 +456,7 @@ export class App {
     this.lastFrame = now;
     const s = this.session;
     if (!s || !this.hud) {
-      // Slow fly-over of the city behind the menus.
+      // Slow fly-over of the current map behind the menus.
       this.menuT += real;
       this.menuCamera.position.set(Math.cos(this.menuT * 0.05) * 90, 45, Math.sin(this.menuT * 0.05) * 90);
       this.menuCamera.lookAt(0, 0, 0);
@@ -340,7 +465,8 @@ export class App {
       this.renderer.render(this.menuCamera);
       return;
     }
-    s.render(this.mode === 'playing' ? alpha : 1, this.mode === 'playing' ? frameDt : 0);
+    const live = this.mode === 'playing';
+    s.render(live ? alpha : 1, live ? frameDt : this.mode === 'over' ? real : 0);
     this.hud.update(real, s.player.camera);
     if (s.shopOpen) this.shop?.update(real);
     const p = s.player.position();
@@ -352,7 +478,10 @@ export class App {
       if (d < store.config.game.audio.combatRadius && z.hasAggro) nearby++;
       else if (d > 30 && d < 70 && !distant) distant = z.pos;
     }
-    this.audio.update(real, { nearbyZombies: nearby, lowHealth: s.player.isLowHealth(), alive: s.player.isAlive(), listenerPos: p, distantZombie: distant });
+    this.audio.update(real, {
+      nearbyZombies: nearby, lowHealth: s.player.isLowHealth(), alive: s.player.isAlive(), listenerPos: p, distantZombie: distant,
+      coreLow: s.core ? s.core.isLow() && s.core.isAlive() && live : false,
+    });
   }
 }
 

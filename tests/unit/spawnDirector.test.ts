@@ -7,7 +7,7 @@ import { config } from './helpers';
 
 const all = config();
 const cfg = all.game.spawnDirector;
-const table = all.map.districtZombieTypes;
+const table = all.maps.city_01.districtZombieTypes;
 const ROLLS = Array.from({ length: 200 }, (_, i) => (i + 0.5) / 200);
 const at = (x: number, z: number) => ({ x, y: 0, z });
 

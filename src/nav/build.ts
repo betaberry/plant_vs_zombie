@@ -4,7 +4,11 @@ import { pointInRect, segmentIntersectsRect, type Rect2 } from '../logic/math';
 import { NavGraph } from './graph';
 
 export interface NavBuildInput {
-  grid: { spacing: number; min: [number, number]; max: [number, number]; clearance: number };
+  /**
+   * Flat outdoor grid (city). null = no grid: the graph is made only of the explicit extra nodes / edges,
+   * which may sit on several levels (guard ring map: lanes, ramps, stairs, elevated walkway).
+   */
+  grid: { spacing: number; min: [number, number]; max: [number, number]; clearance: number } | null;
   obstacles: Rect2[];
   extraNodes: { key: string; pos: Vec3Like; tag: string | null }[];
   extraEdges: [string, string][];
@@ -22,8 +26,14 @@ export function isSegmentClear(ax: number, az: number, bx: number, bz: number, o
 
 export function buildNavGraph(input: NavBuildInput): NavGraph {
   const g = new NavGraph();
-  const { spacing, min, max, clearance } = input.grid;
-  const obstacles = input.obstacles.map((o) => expand(o, clearance));
+  const obstacles = input.obstacles.map((o) => expand(o, input.grid?.clearance ?? 0));
+  if (input.grid) addGrid(g, input.grid, obstacles);
+  addExplicit(g, input, obstacles);
+  return g;
+}
+
+function addGrid(g: NavGraph, grid: NonNullable<NavBuildInput['grid']>, obstacles: Rect2[]): void {
+  const { spacing, min, max } = grid;
   const cols = Math.floor((max[0] - min[0]) / spacing) + 1;
   const rows = Math.floor((max[1] - min[1]) / spacing) + 1;
   const gridId: number[][] = [];
@@ -52,6 +62,9 @@ export function buildNavGraph(input: NavBuildInput): NavGraph {
       if (i + 1 < cols && j - 1 >= 0) link(id, gridId[i + 1]![j - 1]!);
     }
   }
+}
+
+function addExplicit(g: NavGraph, input: NavBuildInput, obstacles: Rect2[]): void {
   for (const n of input.extraNodes) g.addNode(n.key, n.pos, n.tag);
   for (const [a, b] of input.extraEdges) {
     const ia = g.nodeId(a);
@@ -70,5 +83,4 @@ export function buildNavGraph(input: NavBuildInput): NavGraph {
       .slice(0, 3);
     for (const c of candidates) g.addEdge(id, c.id);
   }
-  return g;
 }

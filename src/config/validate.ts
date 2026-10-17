@@ -6,6 +6,7 @@ import type {
   MapConfig,
   PlantDef,
   PlantsConfig,
+  RingMapConfig,
   ShopItem,
   ZombieDef,
   ZombieVisualConfig,
@@ -19,7 +20,9 @@ export interface RawConfig {
   zombies: unknown;
   plants: unknown;
   shop: unknown;
-  map: unknown;
+  /** Maps by id: { city_01: practice city, ring_01: guard ring }. */
+  maps: unknown;
+  challenge: unknown;
   game: unknown;
 }
 
@@ -151,18 +154,20 @@ function validateShop(errors: string[], items: ShopItem[], charIds: string[], ho
   }
 }
 
-function validateMap(errors: string[], map: MapConfig, zombieIds: Set<string>, shopIds: Set<string>): void {
+/** City (practice mode) map rules — unchanged minimums; `w` is the error prefix (e.g. maps.city_01). */
+function validateMap(errors: string[], w: string, map: MapConfig, zombies: Obj, shopIds: Set<string>): void {
+  const zombieIds = new Set(Object.keys(zombies));
   if (!Array.isArray(map.playerSpawns) || map.playerSpawns.length < MIN_PLAYER_SPAWNS) {
-    errors.push(`map: 玩家重生点至少 ${MIN_PLAYER_SPAWNS} 个`);
+    errors.push(`${w}: 玩家重生点至少 ${MIN_PLAYER_SPAWNS} 个`);
   }
   if (!Array.isArray(map.zombieSpawners) || map.zombieSpawners.length < MIN_ZOMBIE_SPAWNERS) {
-    errors.push(`map: 僵尸刷怪点至少 ${MIN_ZOMBIE_SPAWNERS} 个`);
+    errors.push(`${w}: 僵尸刷怪点至少 ${MIN_ZOMBIE_SPAWNERS} 个`);
   }
   const buildings = new Map((map.buildings ?? []).map((b) => [b.id, b]));
   const enterable = (map.buildings ?? []).filter((b) => b.enterable).length;
-  if (enterable < MIN_ENTERABLE_BUILDINGS) errors.push(`map: 可进入建筑至少 ${MIN_ENTERABLE_BUILDINGS} 栋`);
+  if (enterable < MIN_ENTERABLE_BUILDINGS) errors.push(`${w}: 可进入建筑至少 ${MIN_ENTERABLE_BUILDINGS} 栋`);
   for (const b of map.buildings ?? []) {
-    if (b.enterable && !b.doorSide) errors.push(`map.buildings.${b.id}: 可进入建筑缺少 doorSide`);
+    if (b.enterable && !b.doorSide) errors.push(`${w}.buildings.${b.id}: 可进入建筑缺少 doorSide`);
   }
   const routes = new Set((map.patrolRoutes ?? []).map((r) => r.id));
   const checkPlace = (where: string, p: { pos?: unknown; building?: string; room?: string }): void => {
@@ -175,16 +180,112 @@ function validateMap(errors: string[], map: MapConfig, zombieIds: Set<string>, s
     }
   };
   for (const s of map.zombieSpawners ?? []) {
-    if (!zombieIds.has(s.type)) errors.push(`map.zombieSpawners.${s.id}: 僵尸类型 "${s.type}" 不存在`);
-    if (s.patrolRoute && !routes.has(s.patrolRoute)) errors.push(`map.zombieSpawners.${s.id}: 巡逻路线 "${s.patrolRoute}" 不存在`);
-    checkPlace(`map.zombieSpawners.${s.id}`, s);
+    if (!zombieIds.has(s.type)) errors.push(`${w}.zombieSpawners.${s.id}: 僵尸类型 "${s.type}" 不存在`);
+    else if (isGuardOnly(zombies, s.type)) errors.push(`${w}.zombieSpawners.${s.id}: 僵尸类型 "${s.type}" 仅限守卫模式`);
+    if (s.patrolRoute && !routes.has(s.patrolRoute)) errors.push(`${w}.zombieSpawners.${s.id}: 巡逻路线 "${s.patrolRoute}" 不存在`);
+    checkPlace(`${w}.zombieSpawners.${s.id}`, s);
   }
-  for (const a of map.ambushPoints ?? []) checkPlace(`map.ambushPoints.${a.id}`, a);
+  for (const a of map.ambushPoints ?? []) checkPlace(`${w}.ambushPoints.${a.id}`, a);
   for (const p of map.pickupPoints ?? []) {
-    if (p.item !== 'sun_pack' && !shopIds.has(p.item)) errors.push(`map.pickupPoints.${p.id}: 物品 "${p.item}" 不存在`);
-    checkPlace(`map.pickupPoints.${p.id}`, p);
+    if (p.item !== 'sun_pack' && !shopIds.has(p.item)) errors.push(`${w}.pickupPoints.${p.id}: 物品 "${p.item}" 不存在`);
+    checkPlace(`${w}.pickupPoints.${p.id}`, p);
   }
-  if (!map.waypointGraph?.grid) errors.push('map.waypointGraph.grid: 缺失');
+  if (!map.waypointGraph?.grid) errors.push(`${w}.waypointGraph.grid: 缺失`);
+}
+
+/** Boss / imp types are guard-mode only (FR8.5): they never appear in practice spawn tables or wave pools. */
+function isGuardOnly(zombies: Obj, id: string): boolean {
+  const z = zombies[id];
+  return isObj(z) && z.guardOnly === true;
+}
+
+const RING_ORDER = ['outer', 'middle', 'inner'];
+export const RING_ENTRANCES = 4;
+export const MIN_LANE_WIDTH = 8;
+export const RAMPS_PER_RING_LINK = 2;
+export const RING_STAIRS = 2;
+
+function positive(v: unknown): boolean {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0;
+}
+
+function isAngle(v: unknown): boolean {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 360;
+}
+
+/** Ring (guard mode) map rules: FR2.1 / FR2.6 (entrances, radii, lane width, core inside the inner ring, spawn groups). */
+function validateRingMap(errors: string[], w: string, map: RingMapConfig): void {
+  const rings = Array.isArray(map.rings) ? map.rings : [];
+  if (rings.length !== RING_ORDER.length || rings.some((r, i) => r?.id !== RING_ORDER[i])) {
+    errors.push(`${w}.rings: 需要按 outer、middle、inner 顺序的 3 圈`);
+  }
+  if (!positive(map.laneWidth) || map.laneWidth < MIN_LANE_WIDTH) errors.push(`${w}.laneWidth: 环道宽度至少 ${MIN_LANE_WIDTH} m`);
+  for (const k of ['wallHeight', 'outerWallThickness', 'wallSegmentDeg'] as const) if (!positive(map[k])) errors.push(`${w}.${k}: 应为正数`);
+  const half = (positive(map.laneWidth) ? map.laneWidth : MIN_LANE_WIDTH) / 2;
+  for (let i = 0; i < rings.length; i++) {
+    if (!positive(rings[i]?.radius)) { errors.push(`${w}.rings[${i}].radius: 应为正数`); continue; }
+    const next = rings[i + 1]?.radius;
+    // Lanes must not overlap: a wall band (> 0 m) separates neighbouring lanes.
+    if (typeof next === 'number' && !(rings[i]!.radius - half > next + half)) errors.push(`${w}.rings: 半径必须递减且相邻环道之间要有墙（${rings[i]!.id} / ${rings[i + 1]!.id}）`);
+  }
+  validateRingCore(errors, w, map, rings, half);
+  validateRingLinks(errors, w, map, rings);
+  const ents = Array.isArray(map.entrances) ? map.entrances : [];
+  if (ents.length !== RING_ENTRANCES) errors.push(`${w}.entrances: 需要 ${RING_ENTRANCES} 个外圈入口（当前 ${ents.length}）`);
+  for (const e of ents) {
+    if (!isAngle(e.angleDeg) || !positive(e.width)) errors.push(`${w}.entrances.${e.id}: 角度应在 0～360 之间、宽度为正数`);
+    const pts = Array.isArray(e.spawnPoints) ? e.spawnPoints : [];
+    if (pts.length === 0) errors.push(`${w}.entrances.${e.id}.spawnPoints: 刷怪点组不能为空`);
+    const outerEdge = (rings[0]?.radius ?? 0) + half + (map.outerWallThickness ?? 0);
+    for (const p of pts) if (!positive(p?.radius) || !isAngle(p?.angleDeg) || p.radius <= outerEdge) errors.push(`${w}.entrances.${e.id}.spawnPoints: 刷怪点必须在外墙之外`);
+  }
+  if (!Array.isArray(map.playerSpawns) || map.playerSpawns.length === 0) errors.push(`${w}.playerSpawns: 至少 1 个玩家出生点`);
+  if (!isObj(map.nav) || !positive(map.nav.laneNodeSpacing) || !positive(map.nav.coreApproachDistance)) errors.push(`${w}.nav: laneNodeSpacing / coreApproachDistance 应为正数`);
+}
+
+function validateRingCore(errors: string[], w: string, map: RingMapConfig, rings: RingMapConfig['rings'], half: number): void {
+  const c = map.core;
+  if (!isObj(c) || !Array.isArray(c.size) || !positive(c.size[0]) || !positive(c.size[1]) || !positive(c.height)) {
+    errors.push(`${w}.core: 需要 center、正数 size 与 height`);
+    return;
+  }
+  const inner = rings[rings.length - 1]?.radius ?? 0;
+  const [cx, cz] = Array.isArray(c.center) ? c.center : [NaN, NaN];
+  const reach = Math.hypot(Math.abs(cx) + c.size[0] / 2, Math.abs(cz) + c.size[1] / 2);
+  if (!(reach < inner - half)) errors.push(`${w}.core: 核心房必须完整位于内圈环道之内`);
+}
+
+function validateRingLinks(errors: string[], w: string, map: RingMapConfig, rings: RingMapConfig['rings']): void {
+  const ramps = Array.isArray(map.ramps) ? map.ramps : [];
+  for (let i = 0; i + 1 < rings.length; i++) {
+    const from = rings[i]!.id;
+    const to = rings[i + 1]!.id;
+    const n = ramps.filter((r) => r.from === from && r.to === to).length;
+    if (n !== RAMPS_PER_RING_LINK) errors.push(`${w}.ramps: ${from} → ${to} 之间需要 ${RAMPS_PER_RING_LINK} 个坡道（当前 ${n}）`);
+  }
+  for (const r of ramps) {
+    const fi = RING_ORDER.indexOf(r.from);
+    if (fi < 0 || RING_ORDER.indexOf(r.to) !== fi + 1) errors.push(`${w}.ramps.${r.id}: 只能连接相邻的两圈`);
+    if (!isAngle(r.angleDeg) || !positive(r.width)) errors.push(`${w}.ramps.${r.id}: 角度应在 0～360 之间、宽度为正数`);
+    if (typeof r.slopeDeg !== 'number' || r.slopeDeg < 0 || r.slopeDeg > 15) errors.push(`${w}.ramps.${r.id}.slopeDeg: 坡度应在 0～15° 之间（可种植）`);
+  }
+  const stairs = Array.isArray(map.stairs) ? map.stairs : [];
+  if (stairs.length !== RING_STAIRS) errors.push(`${w}.stairs: 需要 ${RING_STAIRS} 个层间楼梯`);
+  const el = map.elevated;
+  if (!isObj(el) || !positive(el.height) || !(el.height < map.wallHeight) || !isAngle(el.fromDeg) || !isAngle(el.toDeg)) {
+    errors.push(`${w}.elevated: 高架层需要角度范围与低于墙高的正数高度`);
+  } else {
+    const [a, b] = Array.isArray(el.between) ? el.between : [];
+    if (RING_ORDER.indexOf(String(b)) !== RING_ORDER.indexOf(String(a)) + 1 || RING_ORDER.indexOf(String(a)) < 0) errors.push(`${w}.elevated.between: 需要相邻的两圈`);
+    for (const s of stairs) if (!angleWithin(s.angleDeg, el.fromDeg, el.toDeg)) errors.push(`${w}.stairs.${s.id}: 楼梯必须在高架层角度范围内`);
+  }
+}
+
+/** True when angle a lies on the arc from → to (counter-clockwise, degrees). */
+export function angleWithin(a: number, from: number, to: number): boolean {
+  const span = (((to - from) % 360) + 360) % 360;
+  const d = (((a - from) % 360) + 360) % 360;
+  return d <= span;
 }
 
 const ZOMBIE_PALETTES = ['jacket', 'shirt', 'tie', 'trousers', 'skin', 'hair', 'shoe', 'teeth', 'eyes'];
@@ -229,24 +330,29 @@ function validateZombieVisual(errors: string[], game: Obj, zombies: Obj): void {
       errors.push(`game.zombieVisual.animation.death: 总时长 ${death.toFixed(2)} s 应小于 zombies.${id}.deathRemoveDelay`);
     }
     const range = zd.headHeightRange;
-    if (Array.isArray(range) && Array.isArray(hs) && (head * hs[0] < range[0] || head * hs[1] > range[1])) {
-      errors.push(`game.zombieVisual.proportions: 头部中心高度 ${head.toFixed(2)} m（含身高差异）超出 zombies.${id}.headHeightRange`);
+    const scaled = head * bodyScaleOf(z);
+    if (Array.isArray(range) && Array.isArray(hs) && (scaled * hs[0] < range[0] || scaled * hs[1] > range[1])) {
+      errors.push(`game.zombieVisual.proportions: 头部中心高度 ${scaled.toFixed(2)} m（含体型缩放与身高差异）超出 zombies.${id}.headHeightRange`);
     }
   }
 }
 
 const ARMOR_KINDS = new Set(['cone', 'bucket', 'newspaper', 'screendoor', 'helmet']);
 const ARMOR_PROTECTS = new Set(['head', 'body', 'front']);
-const ACCESSORIES = new Set(['cone', 'bucket', 'helmet', 'shoulderPads', 'pole', 'newspaper', 'screendoor']);
+const ACCESSORIES = new Set(['cone', 'bucket', 'helmet', 'shoulderPads', 'pole', 'newspaper', 'screendoor', 'telephonePole', 'impRider']);
 const ABILITY_FIELDS: Record<string, string[]> = {
   poleVault: ['triggerRange', 'triggerAngleDeg', 'duration', 'landingDistance', 'speedAfter'],
   newspaperRage: ['rageDuration', 'chaseSpeedAfter', 'wanderSpeedAfter'],
   charge: ['minDistance', 'approachSpeed'],
+  smash: ['windup', 'radius', 'damageVsCore', 'damageVsPlayer', 'cooldown'],
+  throwImp: ['healthFraction', 'throwDistance', 'flightTime'],
 };
+/** Allowed uniform rig scale (gargantuar ≈ 2, imp ≈ 0.6). */
+export const BODY_SCALE_RANGE: [number, number] = [0.3, 3];
 
-const POSE_STYLES = new Set(['normal', 'newspaper', 'screendoor', 'football', 'pole']);
-/** Revision 2 animation blocks: every field must be a finite number. */
-const TYPE_ANIM_BLOCKS = ['vault', 'rage', 'newspaper', 'screendoor', 'charge'] as const;
+const POSE_STYLES = new Set(['normal', 'newspaper', 'screendoor', 'football', 'pole', 'gargantuar', 'imp']);
+/** Revision 2 animation blocks (+ guard mode gargantuar / imp): every field must be a finite number. */
+const TYPE_ANIM_BLOCKS = ['vault', 'rage', 'newspaper', 'screendoor', 'charge', 'gargantuar', 'imp'] as const;
 const DROPPED_PROP_FIELDS = ['maxActive', 'restSeconds', 'fadeSeconds', 'launchSpeed', 'spinSpeed'];
 
 function numberBlock(errors: string[], where: string, block: unknown): block is Obj {
@@ -284,6 +390,9 @@ function validateZombieLook(errors: string[], id: string, z: Obj): void {
   if (!acc || acc.some((a) => !ACCESSORIES.has(a))) errors.push(`${where}.accessories: 应为配件 id 列表`);
   if (!POSE_STYLES.has(String(vis.poseStyle))) errors.push(`${where}.poseStyle: 未知动作风格 "${String(vis.poseStyle)}"`);
   if (typeof vis.allowMissingArm !== 'boolean') errors.push(`${where}.allowMissingArm: 应为布尔值`);
+  if (vis.bodyScale !== undefined && (typeof vis.bodyScale !== 'number' || !(vis.bodyScale >= BODY_SCALE_RANGE[0] && vis.bodyScale <= BODY_SCALE_RANGE[1]))) {
+    errors.push(`${where}.bodyScale: 应在 ${BODY_SCALE_RANGE[0]}～${BODY_SCALE_RANGE[1]} 之间`);
+  }
   if (vis.palette !== undefined) {
     if (!isObj(vis.palette)) errors.push(`${where}.palette: 应为对象`);
     else for (const [k, list] of Object.entries(vis.palette)) {
@@ -334,13 +443,34 @@ function validateAbilities(errors: string[], id: string, abilities: unknown): vo
   }
 }
 
+/** Boss abilities: smash must destroy plants explicitly; the imp throw threshold is a fraction and the imp type must exist. */
+function validateBossAbilities(errors: string[], id: string, abilities: unknown, zombies: Obj): void {
+  if (!isObj(abilities)) return;
+  const smash = abilities.smash;
+  if (isObj(smash) && typeof smash.destroysPlants !== 'boolean') errors.push(`zombies.${id}.abilities.smash.destroysPlants: 应为布尔值`);
+  const ti = abilities.throwImp;
+  if (!isObj(ti)) return;
+  const f = ti.healthFraction;
+  if (typeof f !== 'number' || !(f > 0 && f < 1)) errors.push(`zombies.${id}.abilities.throwImp.healthFraction: 应在 0～1 之间（不含端点）`);
+  if (!isObj(zombies[String(ti.impType)])) errors.push(`zombies.${id}.abilities.throwImp.impType: 僵尸类型 "${String(ti.impType)}" 不存在`);
+  else if (String(ti.impType) === id) errors.push(`zombies.${id}.abilities.throwImp.impType: 不能扔出自己`);
+}
+
+/** Per-type rig scale (default 1). */
+export function bodyScaleOf(z: Obj): number {
+  const s = isObj(z.visual) ? z.visual.bodyScale : undefined;
+  return typeof s === 'number' ? s : 1;
+}
+
 /** Revision 2: armour, abilities and the D-29 speed rule for every zombie type. */
 function validateZombieTypes(errors: string[], zombies: Obj, walkSpeed: number): void {
   for (const [id, z] of Object.entries(zombies)) {
     if (!isObj(z)) continue;
     validateArmor(errors, id, z.armor);
     validateAbilities(errors, id, z.abilities);
+    validateBossAbilities(errors, id, z.abilities, zombies);
     validateZombieLook(errors, id, z);
+    if ('guardOnly' in z && typeof z.guardOnly !== 'boolean') errors.push(`zombies.${id}.guardOnly: 应为布尔值`);
     const zd = z as unknown as ZombieDef;
     if (typeof zd.wanderSpeed !== 'number' || typeof zd.chaseSpeed !== 'number') continue;
     const fastest = Math.max(...allMoveSpeeds(zd).filter((s) => typeof s === 'number'));
@@ -351,25 +481,28 @@ function validateZombieTypes(errors: string[], zombies: Obj, walkSpeed: number):
 }
 
 /** Revision 2: district spawn tables (map) and per-type caps / heavy types (game.spawnDirector). */
-function validateSpawnTypes(errors: string[], map: MapConfig, game: Obj, zombieIds: Set<string>): void {
+function validateSpawnTypes(errors: string[], w: string, map: MapConfig, game: Obj, zombies: Obj): void {
+  const zombieIds = new Set(Object.keys(zombies));
   const districts = new Set((map.districts ?? []).map((d) => d.id));
   const table = map.districtZombieTypes;
-  if (!isObj(table)) errors.push('map.districtZombieTypes: 缺失');
+  if (!isObj(table)) errors.push(`${w}.districtZombieTypes: 缺失`);
   else for (const [district, weights] of Object.entries(table)) {
-    const where = `map.districtZombieTypes.${district}`;
+    const where = `${w}.districtZombieTypes.${district}`;
     if (!districts.has(district)) errors.push(`${where}: 街区 "${district}" 不存在`);
     if (!isObj(weights)) { errors.push(`${where}: 应为对象`); continue; }
     let sum = 0;
-    for (const [type, w] of Object.entries(weights)) {
+    for (const [type, wt] of Object.entries(weights)) {
       if (!zombieIds.has(type)) errors.push(`${where}: 僵尸类型 "${type}" 不存在`);
-      if (typeof w !== 'number' || !(w >= 0)) errors.push(`${where}.${type}: 权重不能为负`);
-      else sum += w;
+      else if (isGuardOnly(zombies, type)) errors.push(`${where}: 僵尸类型 "${type}" 仅限守卫模式，不能出现在练习模式刷怪表`);
+      if (typeof wt !== 'number' || !(wt >= 0)) errors.push(`${where}.${type}: 权重不能为负`);
+      else sum += wt;
     }
     if (!(sum > 0)) errors.push(`${where}: 权重总和应大于 0`);
   }
   const sd = game.spawnDirector;
   if (!isObj(sd)) { errors.push('game.spawnDirector: 缺失'); return; }
   if (!zombieIds.has(String(sd.defaultZombieType))) errors.push(`game.spawnDirector.defaultZombieType: 僵尸类型 "${String(sd.defaultZombieType)}" 不存在`);
+  else if (isGuardOnly(zombies, String(sd.defaultZombieType))) errors.push('game.spawnDirector.defaultZombieType: 不能是仅限守卫模式的类型');
   if (!Array.isArray(sd.heavyZombieTypes)) errors.push('game.spawnDirector.heavyZombieTypes: 缺失');
   else for (const t of sd.heavyZombieTypes) if (!zombieIds.has(String(t))) errors.push(`game.spawnDirector.heavyZombieTypes: 僵尸类型 "${String(t)}" 不存在`);
   if (typeof sd.heavyWeightStep !== 'number' || sd.heavyWeightStep < 0) errors.push('game.spawnDirector.heavyWeightStep: 应为非负数');
@@ -380,9 +513,89 @@ function validateSpawnTypes(errors: string[], map: MapConfig, game: Obj, zombieI
   }
 }
 
+export const DIFFICULTY_IDS = ['easy', 'standard', 'hard'] as const;
+const DIFFICULTY_FIELDS = [
+  'waves', 'firstWaveCount', 'waveIncrement', 'waveCap', 'zombieHealthMultiplier', 'playerDamageMultiplier',
+  'coreDamageMultiplier', 'countdownSeconds', 'entranceCap', 'sunIncomeMultiplier', 'coreHealth', 'bossHealth',
+] as const;
+const INTEGER_DIFFICULTY_FIELDS = new Set(['waves', 'firstWaveCount', 'waveIncrement', 'waveCap', 'entranceCap']);
+
+/** challenge.json (FR5.4): every difficulty complete and positive, wave cap ≤ the alive cap, known types, staged core damage. */
+function validateChallenge(errors: string[], ch: Obj, zombies: Obj, entrances: number): void {
+  const waves = isObj(ch.waves) ? ch.waves : null;
+  if (!waves) { errors.push('challenge.waves: 缺失'); return; }
+  const maxAlive = waves.maxAlive;
+  if (!positive(maxAlive) || !Number.isInteger(maxAlive)) errors.push('challenge.waves.maxAlive: 应为正整数');
+  const diffs = isObj(ch.difficulties) ? ch.difficulties : {};
+  for (const id of DIFFICULTY_IDS) {
+    const d = diffs[id];
+    const where = `challenge.difficulties.${id}`;
+    if (!isObj(d)) { errors.push(`${where}: 缺失`); continue; }
+    for (const f of DIFFICULTY_FIELDS) {
+      const v = d[f];
+      if (!positive(v)) errors.push(`${where}.${f}: 应为正数`);
+      else if (INTEGER_DIFFICULTY_FIELDS.has(f) && !Number.isInteger(v)) errors.push(`${where}.${f}: 应为整数`);
+    }
+    if (positive(d.waveCap) && positive(maxAlive) && (d.waveCap as number) > (maxAlive as number)) errors.push(`${where}.waveCap: 单波上限 ${String(d.waveCap)} 超过同屏上限 ${String(maxAlive)}`);
+    if (positive(d.entranceCap) && (d.entranceCap as number) > entrances) errors.push(`${where}.entranceCap: 入口上限超过地图入口数 ${entrances}`);
+  }
+  for (const k of ['spawnIntervalBase', 'spawnIntervalFactor', 'spawnIntervalMin'] as const) if (!positive(waves[k])) errors.push(`challenge.waves.${k}: 应为正数`);
+  if (positive(waves.spawnIntervalFactor) && !((waves.spawnIntervalFactor as number) <= 1)) errors.push('challenge.waves.spawnIntervalFactor: 不应大于 1（每波节奏只能加快）');
+  const unlocks = Array.isArray(waves.typeUnlocks) ? waves.typeUnlocks as Obj[] : [];
+  if (unlocks.length === 0 || !unlocks.some((u) => u.fromWave === 1)) errors.push('challenge.waves.typeUnlocks: 至少一种类型从第 1 波开始');
+  for (const u of unlocks) {
+    const t = String(u.type);
+    if (!isObj(zombies[t])) errors.push(`challenge.waves.typeUnlocks: 僵尸类型 "${t}" 不存在`);
+    else if (isGuardOnly(zombies, t)) errors.push(`challenge.waves.typeUnlocks: "${t}" 是 BOSS / 小鬼，不能进入普通波次`);
+    if (!positive(u.fromWave) || !Number.isInteger(u.fromWave) || !positive(u.weight)) errors.push(`challenge.waves.typeUnlocks.${t}: fromWave 应为正整数、weight 为正数`);
+  }
+  validateEntranceCurve(errors, waves.entranceCurve, entrances);
+  const boss = String(waves.bossType);
+  if (!isObj(zombies[boss])) errors.push(`challenge.waves.bossType: 僵尸类型 "${boss}" 不存在`);
+  validateChallengeMisc(errors, ch);
+}
+
+function validateEntranceCurve(errors: string[], curve: unknown, entrances: number): void {
+  const list = Array.isArray(curve) ? curve as Obj[] : [];
+  if (list.length === 0 || list[0]?.fromWave !== 1) { errors.push('challenge.waves.entranceCurve: 需要从第 1 波开始'); return; }
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i]!;
+    if (!positive(e.open) || !Number.isInteger(e.open) || (e.open as number) > entrances) errors.push(`challenge.waves.entranceCurve[${i}].open: 应为 1～${entrances} 的整数`);
+    const prev = list[i - 1];
+    if (prev && !((e.fromWave as number) > (prev.fromWave as number) && (e.open as number) >= (prev.open as number))) errors.push(`challenge.waves.entranceCurve[${i}]: fromWave 需递增且开放数不减少`);
+  }
+}
+
+function validateChallengeMisc(errors: string[], ch: Obj): void {
+  const core = isObj(ch.core) ? ch.core : {};
+  const stages = Array.isArray(core.damageStages) ? core.damageStages : [];
+  const ok = stages.length > 0 && stages.every((s, i) => typeof s === 'number' && s >= 0 && s < 1 && (i === 0 || s < (stages[i - 1] as number))) && stages[stages.length - 1] === 0;
+  if (!ok) errors.push('challenge.core.damageStages: 应为 0～1 之间严格递减、以 0 结尾的比例');
+  if (typeof core.lowHealthFraction !== 'number' || !(core.lowHealthFraction > 0 && core.lowHealthFraction < 1)) errors.push('challenge.core.lowHealthFraction: 应在 0～1 之间');
+  const t = isObj(ch.targeting) ? ch.targeting : {};
+  for (const k of ['playerApproachRadius', 'plantApproachRadius']) if (!positive(t[k])) errors.push(`challenge.targeting.${k}: 应为正数`);
+  const s = isObj(ch.spawnRule) ? ch.spawnRule : {};
+  if (!positive(s.minPlayerDistance)) errors.push('challenge.spawnRule.minPlayerDistance: 应为正数');
+  if (!positive(s.coreDirectionHalfAngleDeg) || (s.coreDirectionHalfAngleDeg as number) >= 180) errors.push('challenge.spawnRule.coreDirectionHalfAngleDeg: 应在 0～180° 之间');
+}
+
+/** maps: practice city (city_01) and guard ring (ring_01), each validated by its own kind (FR2.6). */
+function validateMaps(errors: string[], raw: RawConfig, zombies: Obj, shopIds: Set<string>): void {
+  const maps = raw.maps as Obj;
+  for (const id of ['city_01', 'ring_01']) if (!isObj(maps[id])) errors.push(`maps.${id}: 缺失`);
+  for (const [id, m] of Object.entries(maps)) {
+    if (!isObj(m)) continue;
+    if (m.kind === 'ring') validateRingMap(errors, `maps.${id}`, m as unknown as RingMapConfig);
+    else {
+      validateMap(errors, `maps.${id}`, m as unknown as MapConfig, zombies, shopIds);
+      validateSpawnTypes(errors, `maps.${id}`, m as unknown as MapConfig, raw.game as Obj, zombies);
+    }
+  }
+}
+
 export function validateConfig(raw: RawConfig): string[] {
   const errors: string[] = [];
-  for (const key of ['characters', 'weapons', 'zombies', 'plants', 'shop', 'map', 'game'] as const) {
+  for (const key of ['characters', 'weapons', 'zombies', 'plants', 'shop', 'maps', 'challenge', 'game'] as const) {
     if (!isObj(raw[key])) errors.push(`${key}: 配置缺失或不是对象`);
   }
   if (errors.length) return errors;
@@ -411,9 +624,11 @@ export function validateConfig(raw: RawConfig): string[] {
   validateCharacters(errors, chars, shopIds, new Set(Object.keys(weapons)));
   validatePlants(errors, normalizePlants(raw.plants), shopById, charIds);
   validateShop(errors, items, charIds, typeof hotbarSlots === 'number' ? hotbarSlots : 6);
-  validateMap(errors, raw.map as MapConfig, new Set(Object.keys(zombies)), shopIds);
+  validateMaps(errors, raw, zombies, shopIds);
   validateZombieVisual(errors, raw.game as Obj, zombies);
   validateZombieTypes(errors, zombies, playerWalkSpeed(raw.game as Obj, chars));
-  validateSpawnTypes(errors, raw.map as MapConfig, raw.game as Obj, new Set(Object.keys(zombies)));
+  const ring = (raw.maps as Obj).ring_01;
+  const entrances = isObj(ring) && Array.isArray(ring.entrances) ? ring.entrances.length : RING_ENTRANCES;
+  validateChallenge(errors, raw.challenge as Obj, zombies, entrances);
   return errors;
 }

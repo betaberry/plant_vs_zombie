@@ -1,8 +1,8 @@
 // Full-screen UI states: loading, error, main menu, character select, pause, settings, controls, confirm (FR-UI-01..03, FR-CHR-01).
-import type { AllConfig, CharacterDef } from '../config/types';
+import type { AllConfig, CharacterDef, DifficultyDef, DifficultyId } from '../config/types';
 import type { QualityLevel, Settings } from '../core/store';
 import { button, el } from './dom';
-import { S } from './strings.zh-CN';
+import { S, formatDuration } from './strings.zh-CN';
 
 export function loadingScreen(): { root: HTMLElement; set(progress: number, label: string): void } {
   const bar = el('div');
@@ -34,20 +34,100 @@ export interface MainMenuActions {
   onDelete(): void;
 }
 
-export function mainMenu(a: MainMenuActions): HTMLElement {
+/** Practice mode menu (the original main menu); `onBack` returns to the mode select. */
+export function mainMenu(a: MainMenuActions & { onBack?: () => void }): HTMLElement {
   const cont = button(a.hasSave ? S.menuContinue : `${S.menuContinue}${S.menuNoSave}`, 'menu-continue', a.onContinue);
   cont.disabled = !a.hasSave;
   const del = button(S.menuDelete, 'menu-delete', a.onDelete, 'danger');
   del.disabled = !a.hasSave && !a.saveNote;
   return el('div', { class: 'screen', testid: 'screen-main-menu' },
     el('h1', { class: 'title' }, S.title),
-    el('div', { class: 'subtitle' }, S.subtitle),
+    el('div', { class: 'subtitle' }, `${S.modePractice} · ${S.subtitle}`),
     button(S.menuStart, 'menu-start', a.onStart),
     cont,
     button(S.menuSettings, 'menu-settings', a.onSettings, 'secondary'),
     button(S.menuControls, 'menu-controls', a.onControls, 'secondary'),
     del,
+    a.onBack ? button(S.back, 'menu-back', a.onBack, 'secondary') : null,
     a.saveNote ? el('div', { class: 'note', testid: 'menu-save-note' }, a.saveNote) : null,
+  );
+}
+
+/** FR1.1: the first screen — practice or guard mode. */
+export function modeSelect(a: { onPractice(): void; onGuard(): void; onSettings(): void; onControls(): void; note: string | null }): HTMLElement {
+  const card = (title: string, desc: string, testid: string, onClick: () => void): HTMLElement => {
+    const b = button(title, testid, onClick);
+    return el('div', { class: 'mode-card panel' }, b, el('div', { class: 'note' }, desc));
+  };
+  return el('div', { class: 'screen', testid: 'screen-mode-select' },
+    el('h1', { class: 'title' }, S.title),
+    el('div', { class: 'subtitle' }, S.subtitle),
+    el('div', { class: 'char-cards' },
+      card(S.modePractice, S.modePracticeDesc, 'mode-practice', a.onPractice),
+      card(S.modeGuard, S.modeGuardDesc, 'mode-guard', a.onGuard)),
+    button(S.menuSettings, 'mode-settings', a.onSettings, 'secondary'),
+    button(S.menuControls, 'mode-controls', a.onControls, 'secondary'),
+    a.note ? el('div', { class: 'note', testid: 'mode-note' }, a.note) : null,
+  );
+}
+
+export interface GuardMenuActions {
+  /** Existing guard save (FR11.3), shown as 「继续」. */
+  save: { difficulty: DifficultyId; wave: number; total: number } | null;
+  saveNote: string | null;
+  difficulties: Record<DifficultyId, DifficultyDef>;
+  onContinue(): void;
+  onRestart(): void;
+  onPick(id: DifficultyId): void;
+  onBack(): void;
+}
+
+/** FR1.2 / FR1.3 / FR5.1: continue, restart (confirmed by the caller) or pick a difficulty with its key numbers. */
+export function guardMenu(a: GuardMenuActions): HTMLElement {
+  const cont = button(a.save ? `${S.guardContinue}（${S.guardContinueInfo(S.guardDifficultyNames[a.save.difficulty] ?? a.save.difficulty, a.save.wave, a.save.total)}）` : `${S.guardContinue}${S.menuNoSave}`, 'guard-continue', a.onContinue);
+  cont.disabled = !a.save;
+  const restart = button(S.guardRestart, 'guard-restart', a.onRestart, 'danger');
+  restart.disabled = !a.save;
+  const cards = el('div', { class: 'char-cards', testid: 'guard-difficulty-list' });
+  for (const id of ['easy', 'standard', 'hard'] as DifficultyId[]) {
+    const d = a.difficulties[id];
+    const rows = S.guardDifficultyRows(d).map((r) => el('div', { class: 'note' }, r));
+    cards.append(el('div', { class: 'mode-card panel', testid: `guard-difficulty-${id}` },
+      button(S.guardDifficultyNames[id] ?? id, `guard-difficulty-pick-${id}`, () => a.onPick(id)), ...rows));
+  }
+  return el('div', { class: 'screen', testid: 'screen-guard-menu' },
+    el('h1', { class: 'title' }, S.guardTitle),
+    cont,
+    restart,
+    el('h2', {}, S.guardPickDifficulty),
+    cards,
+    el('div', { class: 'note' }, S.guardSaveNote),
+    a.saveNote ? el('div', { class: 'note', testid: 'guard-save-note' }, a.saveNote) : null,
+    button(S.back, 'guard-back', a.onBack, 'secondary'),
+  );
+}
+
+/** FR10.2: failure — reason, wave, retry the wave or leave. */
+export function failScreen(a: { reason: string; wave: number; total: number; onRetry(): void; onMenu(): void }): HTMLElement {
+  return el('div', { class: 'screen overlay', testid: 'screen-guard-fail' },
+    el('h1', { class: 'title' }, S.failTitle),
+    el('div', { class: 'subtitle', testid: 'guard-fail-reason' }, S.failReasons[a.reason] ?? a.reason),
+    el('div', { class: 'note', testid: 'guard-fail-wave' }, S.failWave(a.wave, a.total)),
+    el('div', { class: 'note' }, S.failKeepNote),
+    button(S.failRetry, 'guard-fail-retry', a.onRetry),
+    button(S.menuBack, 'guard-fail-main-menu', a.onMenu, 'secondary'),
+  );
+}
+
+/** FR10.1: 「守卫成功」 — difficulty, time, remaining core health. */
+export function victoryScreen(a: { difficulty: string; seconds: number; coreHealth: number; coreMax: number; onMenu(): void; onAgain(): void }): HTMLElement {
+  return el('div', { class: 'screen overlay', testid: 'screen-guard-victory' },
+    el('h1', { class: 'title' }, S.victoryTitle),
+    el('div', { class: 'note', testid: 'guard-victory-difficulty' }, S.victoryDifficulty(S.guardDifficultyNames[a.difficulty] ?? a.difficulty)),
+    el('div', { class: 'note', testid: 'guard-victory-time' }, S.victoryTime(formatDuration(a.seconds))),
+    el('div', { class: 'note', testid: 'guard-victory-core' }, S.victoryCore(a.coreHealth, a.coreMax)),
+    button(S.victoryAgain, 'guard-victory-again', a.onAgain),
+    button(S.menuBack, 'guard-victory-main-menu', a.onMenu, 'secondary'),
   );
 }
 

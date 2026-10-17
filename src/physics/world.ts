@@ -2,7 +2,17 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { Vec3Like } from '../core/events';
 
-export type ColliderTeam = 'world' | 'player' | 'zombie' | 'plant' | 'door';
+/** core: guard-mode core house walls · barrier: invisible zombie-only blocker (core house doorway). */
+export type ColliderTeam = 'world' | 'player' | 'zombie' | 'plant' | 'door' | 'core' | 'barrier';
+
+/**
+ * Rapier collision groups (membership << 16 | filter). Zombie-only barriers belong to their own group;
+ * the player's character controller queries with a filter that leaves that group out, so the player walks
+ * through the core doorway while zombie controllers (default groups) are stopped by it.
+ */
+const BARRIER_GROUP = 0x0002;
+export const ZOMBIE_BARRIER_GROUPS = ((BARRIER_GROUP << 16) | 0xffff) >>> 0;
+export const PLAYER_QUERY_GROUPS = ((0xffff << 16) | (0xffff & ~BARRIER_GROUP)) >>> 0;
 export type SurfaceMaterial = 'concrete' | 'metal' | 'wood' | 'glass' | 'flesh' | 'plant';
 
 export interface ColliderTag {
@@ -45,6 +55,14 @@ export class PhysicsWorld {
   addStaticBox(center: Vec3Like, half: Vec3Like, rotation: { x: number; y: number; z: number; w: number } | null, tag: ColliderTag): RAPIER.Collider {
     const desc = RAPIER.ColliderDesc.cuboid(half.x, half.y, half.z).setTranslation(center.x, center.y, center.z);
     if (rotation) desc.setRotation(rotation);
+    const c = this.world.createCollider(desc);
+    this.setTag(c, tag);
+    return c;
+  }
+
+  /** Static box that only blocks zombies (and other default-group queries); the player passes through. */
+  addZombieBarrier(center: Vec3Like, half: Vec3Like, tag: ColliderTag): RAPIER.Collider {
+    const desc = RAPIER.ColliderDesc.cuboid(half.x, half.y, half.z).setTranslation(center.x, center.y, center.z).setCollisionGroups(ZOMBIE_BARRIER_GROUPS);
     const c = this.world.createCollider(desc);
     this.setTag(c, tag);
     return c;

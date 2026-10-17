@@ -11,7 +11,8 @@ import type { GameRenderer } from '../render/renderer';
 import type { NavGraph } from '../nav/graph';
 import type { CityLayout } from '../world/layout';
 import { clear, el, setText } from './dom';
-import { Minimap } from './minimap';
+import { Minimap, RingMinimap } from './minimap';
+import type { RingLayout } from '../world/ringLayout';
 import { S, formatDuration } from './strings.zh-CN';
 
 interface TutorialStep {
@@ -46,7 +47,21 @@ export class Hud {
   private debug = el('div', { class: 'debug', testid: 'hud-debug' });
   private tutorialBox = el('div', { class: 'tutorial', testid: 'hud-tutorial' });
   private resume = el('div', { class: 'resume', testid: 'hud-click-to-resume' }, S.clickToPlay);
-  private minimap: Minimap;
+  private minimap: Minimap | null = null;
+  private ringMinimap: RingMinimap | null = null;
+  // Guard mode (FR4.7, FR12): wave line, countdown / zombies left, F hint, core bar, BOSS bar.
+  private guardPanel = el('div', { class: 'guard-panel', testid: 'hud-guard' });
+  private guardWave = el('div', { class: 'wave', testid: 'hud-guard-wave' });
+  private guardSub = el('div', { class: 'sub', testid: 'hud-guard-status' });
+  private guardStart = el('div', { class: 'start', testid: 'hud-guard-start-hint' }, S.guardStartWaveHint);
+  private coreBox = el('div', { class: 'guard-bar core', testid: 'hud-core' });
+  private coreBar = el('div');
+  private coreNum = el('span', { class: 'num' });
+  private coreLabel = el('span', { class: 'label' }, S.guardCore);
+  private bossBox = el('div', { class: 'guard-bar boss', testid: 'hud-boss' });
+  private bossBar = el('div');
+  private clock = 0;
+  private coreWarnAt = -999;
   private bannerTimer = 0;
   private rejectTimer = 0;
   private hurt = 0;
@@ -71,7 +86,14 @@ export class Hud {
     private readonly nav: NavGraph,
     layout: CityLayout,
   ) {
-    this.minimap = new Minimap(store.config.map, layout);
+    const ring = session.guard ? (layout as RingLayout) : null;
+    if (ring && ring.kind === 'ring') this.ringMinimap = new RingMinimap(store.config.maps.ring_01, ring);
+    else this.minimap = new Minimap(store.config.maps.city_01, layout);
+    const minimapCanvas = (this.ringMinimap ?? this.minimap)!.canvas;
+    this.coreBox.append(this.coreLabel, el('div', { class: 'bar' }, this.coreBar), this.coreNum);
+    this.bossBox.append(el('span', { class: 'label' }, S.guardBossName), el('div', { class: 'bar' }, this.bossBar));
+    this.guardPanel.append(this.guardWave, this.guardSub, this.guardStart, this.coreBox, this.bossBox);
+    this.guardPanel.style.display = session.guard ? 'flex' : 'none';
     const gunner = session.gun !== null;
     this.healthBox.append(el('span', { class: 'avatar' }, S.characterIcons[session.character.id] ?? ''),
       el('div', { class: 'bar' }, this.healthBar), this.healthNum);
@@ -83,7 +105,8 @@ export class Hud {
     this.root = el('div', { class: 'hud passive', testid: 'hud' },
       this.vignette, this.labels,
       el('div', { class: 'tl' }, el('div', { class: 'sun' }, this.sunIcon, this.sun), this.sub1, this.floats),
-      el('div', { class: 'tr' }, this.minimap.canvas),
+      el('div', { class: 'tr' }, minimapCanvas),
+      this.guardPanel,
       el('div', { class: 'bl' }, this.healthBox),
       el('div', { class: 'br' }, gunner ? this.ammo : null, gunner ? this.reload : null, this.counts, gunner ? null : this.shooters, this.hotbar),
       this.banner, this.potion, this.hint, this.reject, this.crosshair, this.wheel, this.tutorialBox, this.death, this.debug, this.resume, this.fade,
@@ -124,6 +147,15 @@ export class Hud {
         if (p.ok && (p.itemId === 'sunflower_seed' || p.itemId.endsWith('_seed'))) this.flags.bought = true;
       }),
       ev.on('plantPlaced', () => (this.flags.planted = true)),
+      ev.on('waveStarted', (w) => this.showBanner(w.boss ? S.bannerBossWave : S.bannerWaveStart(w.wave, w.total), w.boss ? 'danger' : 'warn')),
+      ev.on('waveCleared', (w) => this.showBanner(S.bannerWaveCleared(w.wave), 'info')),
+      ev.on('impThrown', () => this.showBanner(S.bannerImpThrown, 'warn')),
+      ev.on('coreHurt', () => {
+        // At most one warning per banner cooldown so steady chewing does not spam the banner.
+        if (this.clock - this.coreWarnAt < store.config.game.ui.ammoBannerCooldown) return;
+        this.coreWarnAt = this.clock;
+        this.showBanner(S.bannerCoreHit, 'danger');
+      }),
     );
   }
 
@@ -279,8 +311,35 @@ export class Hud {
     this.updateLabels(camera);
     this.updateDebug();
     this.updateTutorial(dt);
-    const crates = s.pickups.items.filter((x) => x.active && x.item !== 'sun_pack').map((x) => x.pos);
-    this.minimap.update(p.position(), p.yaw, crates);
+    this.clock += dt;
+    if (this.ringMinimap && s.guard && s.core) {
+      this.ringMinimap.update(p.position(), p.yaw, s.guard.openEntrances(), s.core.isLow(), s.boss()?.pos ?? null, this.clock);
+    } else if (this.minimap) {
+      const crates = s.pickups.items.filter((x) => x.active && x.item !== 'sun_pack').map((x) => x.pos);
+      this.minimap.update(p.position(), p.yaw, crates);
+    }
+    this.updateGuard();
+  }
+
+  /** Guard mode panel (FR4.7, FR12.1–12.2). */
+  private updateGuard(): void {
+    const s = this.session;
+    const g = s.guard;
+    const core = s.core;
+    if (!g || !core) return;
+    const st = g.state;
+    setText(this.guardWave, S.guardWave(st.wave, g.totalWaves));
+    const between = g.between;
+    setText(this.guardSub, between ? S.guardCountdown(Math.ceil(st.countdown)) : S.guardRemaining(g.remaining()));
+    this.guardStart.style.display = between && s.player.isAlive() ? 'block' : 'none';
+    this.coreBar.style.width = `${core.fraction() * 100}%`;
+    setText(this.coreNum, `${Math.ceil(core.health)} / ${core.maxHealth}`);
+    const low = core.isLow();
+    this.coreBox.classList.toggle('low', low);
+    setText(this.coreLabel, low ? S.guardCoreLow : S.guardCore);
+    const boss = s.boss();
+    this.bossBox.style.display = boss ? 'flex' : 'none';
+    if (boss) this.bossBar.style.width = `${(boss.health / boss.maxHealth) * 100}%`;
   }
 
   private updateHotbar(): void {
@@ -365,8 +424,9 @@ export class Hud {
     const p = this.session.player;
     const canvas = this.renderer.renderer.domElement;
     canvas.classList.toggle('dead', !p.isAlive());
-    this.death.style.display = p.isAlive() ? 'none' : 'flex';
-    if (p.isAlive()) return;
+    // Guard mode never respawns: the failure screen replaces the respawn countdown (FR6.2).
+    this.death.style.display = p.isAlive() || this.session.guard ? 'none' : 'flex';
+    if (p.isAlive() || this.session.guard) return;
     const d = this.session.lastDeath;
     const key = `${Math.ceil(p.deathTimer)}`;
     if (this.death.dataset.key === key) return;

@@ -57,16 +57,50 @@ function signTexture(s: SignSpec): THREE.CanvasTexture {
   return tex;
 }
 
+/**
+ * Render + physics world of one map (practice city or guard ring — both come as a CityLayout).
+ * Built per game mode and torn down with dispose() so only one map's colliders and meshes exist at a time.
+ */
 export class City {
   readonly group = new THREE.Group();
   private doors = new Map<string, DoorRuntime>();
   readonly batches: THREE.InstancedMesh[] = [];
+  private readonly colliders: RAPIER.Collider[] = [];
+  private disposed = false;
 
   constructor(scene: THREE.Scene, private readonly phys: PhysicsWorld, readonly layout: CityLayout) {
     this.buildBatches();
     for (const s of layout.signs) this.addSign(s);
     for (const d of layout.doors) this.addDoor(d);
     scene.add(this.group);
+  }
+
+  /** Frees every collider, geometry, material and texture this map created and removes it from the scene. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const c of this.colliders) this.phys.removeCollider(c);
+    this.colliders.length = 0;
+    for (const d of this.doors.values()) if (d.collider) this.phys.removeCollider(d.collider);
+    this.doors.clear();
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    this.group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      geometries.add(mesh.geometry);
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(m);
+    });
+    for (const g of geometries) g.dispose();
+    for (const m of materials) {
+      const map = (m as THREE.MeshBasicMaterial).map;
+      if (map) map.dispose();
+      m.dispose();
+    }
+    for (const b of this.batches) b.dispose();
+    this.batches.length = 0;
+    this.group.removeFromParent();
+    this.group.clear();
   }
 
   private buildBatches(): void {
@@ -98,7 +132,7 @@ export class City {
     for (const b of this.layout.boxes) {
       if (!b.collide) continue;
       const q = quatFor(b);
-      this.phys.addStaticBox(b.center, { x: b.size.x / 2, y: b.size.y / 2, z: b.size.z / 2 }, { x: q.x, y: q.y, z: q.z, w: q.w }, { team: 'world', entityId: null, material: b.surface });
+      this.colliders.push(this.phys.addStaticBox(b.center, { x: b.size.x / 2, y: b.size.y / 2, z: b.size.z / 2 }, { x: q.x, y: q.y, z: q.z, w: q.w }, { team: 'world', entityId: null, material: b.surface }));
     }
   }
 

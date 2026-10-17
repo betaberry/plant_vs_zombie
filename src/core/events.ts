@@ -45,6 +45,21 @@ export interface GameEvents {
   footstep: { pos: Vec3Like; running: boolean };
   pickup: { item: string };
   saved: { ok: boolean };
+  /** Guard mode (FR3): the core house took damage. */
+  coreHurt: { amount: number; health: number; maxHealth: number; pos: Vec3Like };
+  /** Guard mode (FR3.4): the core house reached a new damage stage (1..4). */
+  coreStage: { stage: number };
+  /** Guard mode (FR4): wave lifecycle. */
+  waveStarted: { wave: number; total: number; boss: boolean };
+  waveCleared: { wave: number; total: number };
+  guardFailed: { reason: 'core_destroyed' | 'players_dead'; wave: number };
+  guardVictory: { difficulty: string; seconds: number; coreHealth: number; coreMax: number };
+  /** Guard mode (FR8.3): gargantuar pole smash impact (particles + camera shake). */
+  bossSmash: { pos: Vec3Like; radius: number };
+  /** Guard mode (FR8.4): the gargantuar threw its imp. */
+  impThrown: { from: Vec3Like; to: Vec3Like };
+  /** Guard mode (FR8): the boss entered the field. */
+  bossSpawned: { zombieId: string };
 }
 
 type Handler<T> = (payload: T) => void;

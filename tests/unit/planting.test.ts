@@ -17,7 +17,7 @@ function ctx(plantId: string, characterId: string, over: Partial<PlantContext> =
     rules: cfg.plants.plantingRules,
     aliveOfType: 0,
     ground: flat,
-    zones: { plantable: cfg.map.plantableZones, blocked: cfg.map.nonPlantableZones },
+    zones: { plantable: cfg.maps.city_01.plantableZones, blocked: cfg.maps.city_01.nonPlantableZones },
     occupied: [],
     ...over,
   };

@@ -13,7 +13,11 @@ export const BODY_PART_TYPES = [
  * Revision 2 accessories (plan Step 28): one InstancedMesh each, shared by every zombie that wears one
  * and by the dropped props. `coneDented` is the damaged cone swapped in below half armour.
  */
-export const ACCESSORY_PART_TYPES = ['cone', 'coneDented', 'bucket', 'helmet', 'shoulderPads', 'pole', 'newspaper', 'screendoor'] as const;
+/**
+ * Guard mode (FR8.6) adds `telephonePole` and `impRider` for the gargantuar: zombie main-pass draw calls
+ * grow deliberately from 24 to 26 (one InstancedMesh each, shared by every gargantuar).
+ */
+export const ACCESSORY_PART_TYPES = ['cone', 'coneDented', 'bucket', 'helmet', 'shoulderPads', 'pole', 'newspaper', 'screendoor', 'telephonePole', 'impRider'] as const;
 export const PART_TYPES = [...BODY_PART_TYPES, ...ACCESSORY_PART_TYPES] as const;
 export type PartType = (typeof PART_TYPES)[number];
 export type AccessoryPart = (typeof ACCESSORY_PART_TYPES)[number];
@@ -636,6 +640,64 @@ function screendoor(P: ZombieProportions, base: THREE.Color): THREE.BufferGeomet
   ]);
 }
 
+/**
+ * Guard mode gargantuar weapon: a weathered telephone pole in the right forearm frame, gripped near its
+ * base so most of it extends past the hand (overhead while winding up, slammed forward on the smash).
+ * Lengths are in rig units (the gargantuar rig is scaled ×2 by its bodyScale).
+ */
+function telephonePole(P: ZombieProportions, base: THREE.Color, radial: number): THREE.BufferGeometry {
+  const handY = -P.forearmLength * 0.8 - 0.06;
+  const L = 2.3;
+  const shaft = new THREE.CylinderGeometry(0.05, 0.058, L, Math.max(6, Math.round(radial * 0.7)), 10);
+  shaft.translate(0, handY - L * 0.42, 0);
+  const tipY = handY - L * 0.42 - L / 2 + 0.18;
+  const bar = new THREE.BoxGeometry(0.62, 0.045, 0.05);
+  bar.translate(0, tipY, 0);
+  const insulators = [-0.26, 0.26].map((x) => {
+    const g = ball(0.03, 1, 1.4, 1, 6, 4);
+    g.translate(x, tipY - 0.05, 0);
+    return g;
+  });
+  const wood = (v: THREE.Vector3, _n: THREE.Vector3, c: THREE.Color): void => {
+    c.copy(base);
+    if (Math.sin(v.y * 23 + Math.atan2(v.x, v.z) * 2) > 0.75) c.multiplyScalar(0.8); // grain
+    if (Math.abs(v.y - handY) < 0.1) c.multiplyScalar(0.6); // worn grip
+  };
+  return merge([
+    paint(shaft, wood), paint(bar, (_v, _n, c) => c.copy(base).multiplyScalar(0.85)),
+    ...insulators.map((g) => paint(g, (_v, _n, c) => c.copy(col('#e0f2f1')))),
+  ]);
+}
+
+/** Guard mode: the imp riding on the gargantuar's back (spine frame, +Z is behind the zombie). */
+function impRider(P: ZombieProportions, base: THREE.Color, w: number, h: number): THREE.BufferGeometry {
+  const backZ = P.torsoRadius * P.torsoDepthRatio + 0.07;
+  const y = P.torsoLength * 0.78;
+  const body = ball(1, 0.09, 0.12, 0.07, w, h);
+  body.translate(0, y, backZ);
+  const head = ball(1, 0.085, 0.09, 0.085, w, h);
+  head.translate(0, y + 0.19, backZ + 0.01);
+  const arms = [-1, 1].map((s) => {
+    const g = new THREE.CylinderGeometry(0.022, 0.02, 0.2, 6, 1);
+    g.rotateZ(s * 1.1);
+    g.translate(s * 0.13, y + 0.08, backZ - 0.03);
+    return g;
+  });
+  const eyes = [-1, 1].map((s) => {
+    const g = ball(0.018, 1, 1, 0.6, 6, 4);
+    g.translate(s * 0.032, y + 0.21, backZ + 0.085);
+    return g;
+  });
+  const skin = (_v: THREE.Vector3, n: THREE.Vector3, c: THREE.Color): void => {
+    c.copy(base).multiplyScalar(0.75 + 0.25 * Math.max(0, n.y + 0.3));
+  };
+  return merge([
+    paint(body, (_v, n, c) => c.copy(col('#5d4037')).multiplyScalar(0.8 + 0.2 * Math.max(0, n.y))),
+    paint(head, skin), ...arms.map((g) => paint(g, skin)),
+    ...eyes.map((g) => paint(g, (_v, _n, c) => c.copy(col('#fff59d')))),
+  ]);
+}
+
 /** Build every part geometry from the visual config. */
 export function buildZombieGeometries(v: ZombieVisualConfig): Record<PartType, THREE.BufferGeometry> {
   const P = v.proportions;
@@ -670,5 +732,7 @@ export function buildZombieGeometries(v: ZombieVisualConfig): Record<PartType, T
     pole: pole(P, col(a.pole), s.radial),
     newspaper: newspaper(P, col(a.newspaper)),
     screendoor: screendoor(P, col(a.screendoor)),
+    telephonePole: telephonePole(P, col(a.telephonePole), s.radial),
+    impRider: impRider(P, col(a.impRider), small, smallH),
   };
 }

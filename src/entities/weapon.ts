@@ -134,7 +134,7 @@ export class PeaGun {
       store.events.emit('zombieHit', { pos: hit.point, zone: 'torso', damage: 0, ice: false });
       return;
     }
-    if (hit.tag.team === 'world' || hit.tag.team === 'door') {
+    if (hit.tag.team === 'world' || hit.tag.team === 'door' || hit.tag.team === 'core') {
       this.deps.decals.add(hit.point, hit.normal);
       this.deps.particles.emit('dust', hit.point);
       worldHitSound(hit.tag.material, hit.point);

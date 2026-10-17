@@ -122,7 +122,9 @@
       "shoulderPads": "#d32f2f",
       "pole": "#a1887f",
       "newspaper": "#ece8dc",
-      "screendoor": "#8f9aa1"
+      "screendoor": "#8f9aa1",
+      "telephonePole": "#6d4c41",
+      "impRider": "#9ccc65"
     },
     "droppedProps": { "maxActive": 16, "restSeconds": 2, "fadeSeconds": 0.6, "launchSpeed": 2.5, "spinSpeed": 6, "gravity": -15, "bounce": 0.35 },
     "animation": {
@@ -146,6 +148,8 @@
       "newspaper": { "armDeg": 62, "elbowDeg": 78, "headDownDeg": 16, "pageTurnHz": 0.25, "pageTurnDeg": 12 },
       "screendoor": { "armDeg": 80, "elbowDeg": 35, "leanDeg": 8 },
       "charge": { "leanDeg": 38, "headDownDeg": 22, "armDeg": 25, "elbowDeg": 95, "hipSwingScale": 1.25 },
+      "gargantuar": { "stanceWidthDeg": 9, "stompDip": 0.06, "swayRollDeg": 5, "leanDeg": 14, "poleArmDeg": 35, "poleElbowDeg": 70, "smashRaiseDeg": 170, "smashSlamDeg": 55, "smashLeanBackDeg": -14, "smashLeanDeg": 34, "smashCrouchDeg": 22, "throwTime": 0.7, "throwBackDeg": 200, "throwReleaseDeg": 95 },
+      "imp": { "leanDeg": 24, "hipSwingScale": 1.35, "armPumpDeg": 45, "elbowDeg": 95, "bounce": 0.04 },
       "armorHitHeadScale": 1.8
     }
   }

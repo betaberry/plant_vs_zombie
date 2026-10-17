@@ -4,7 +4,8 @@ import type { Vec3Like } from './events';
 
 export type GameCommand =
   | { type: 'damage'; target: IAttackable; amount: number; info: DamageInfo }
-  | { type: 'spawn'; spawnerId: string | null; pos: Vec3Like; ambush: boolean; patrolRoute?: string; zombieType?: string }
+  /** guardWave: guard mode wave spawn (difficulty health scaling, boss flag); jitter: spawn offset override. */
+  | { type: 'spawn'; spawnerId: string | null; pos: Vec3Like; ambush: boolean; patrolRoute?: string; zombieType?: string; guardWave?: { boss: boolean }; jitter?: number }
   | { type: 'plant'; plantType: string; pos: Vec3Like; yaw: number }
   | { type: 'shovel'; plantId: string }
   | { type: 'pickup'; pickupId: string }

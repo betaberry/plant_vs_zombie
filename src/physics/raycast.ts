@@ -24,9 +24,12 @@ export function castRay(phys: PhysicsWorld, origin: Vec3Like, dir: Vec3Like, max
   if (len === 0) return null;
   const d = { x: dir.x / len, y: dir.y / len, z: dir.z / len };
   const ray = new phys.R.Ray(origin, d);
-  const predicate = opts.skip
-    ? (c: RAPIER.Collider): boolean => !opts.skip!(phys.tagOf(c) ?? UNTAGGED, c)
-    : undefined;
+  // Zombie-only barriers (core doorway) are invisible to every ray: shots, sight, aiming and ground probes.
+  const predicate = (c: RAPIER.Collider): boolean => {
+    const tag = phys.tagOf(c) ?? UNTAGGED;
+    if (tag.team === 'barrier') return false;
+    return opts.skip ? !opts.skip(tag, c) : true;
+  };
   const hit = phys.world.castRayAndGetNormal(
     ray, maxDist, true, phys.R.QueryFilterFlags.EXCLUDE_SENSORS, undefined, opts.exclude ?? undefined, undefined, predicate,
   );

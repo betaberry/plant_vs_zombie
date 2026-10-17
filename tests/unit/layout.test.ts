@@ -5,9 +5,9 @@ import { buildingAt, districtAt, generateLayout, resolvePlace } from '../../src/
 import { config } from './helpers';
 
 const cfg = config();
-const layout = generateLayout(cfg.map);
+const layout = generateLayout(cfg.maps.city_01);
 const nav = buildNavGraph({
-  grid: cfg.map.waypointGraph.grid,
+  grid: cfg.maps.city_01.waypointGraph.grid,
   obstacles: layout.obstacles,
   extraNodes: layout.navNodes,
   extraEdges: layout.navEdges,
@@ -28,7 +28,7 @@ describe('city layout & waypoint graph (FR-MAP, TR-NAV-03)', () => {
   });
 
   it('reaches every building upstairs room from the start district', () => {
-    const start = nav.nearestNode(resolvePlace(layout, { pos: cfg.map.playerSpawns[0]!.pos }), (n) => n.tag === 'outdoor');
+    const start = nav.nearestNode(resolvePlace(layout, { pos: cfg.maps.city_01.playerSpawns[0]!.pos }), (n) => n.tag === 'outdoor');
     for (const b of layout.buildings.filter((x) => x.enterable)) {
       const goal = nav.nodeId(`${b.id}:upstairsBack`)!;
       const path = findPath(nav, start, goal, false);
@@ -37,13 +37,13 @@ describe('city layout & waypoint graph (FR-MAP, TR-NAV-03)', () => {
   });
 
   it('places spawns outside buildings and ambushers inside their building', () => {
-    for (const s of cfg.map.playerSpawns) {
+    for (const s of cfg.maps.city_01.playerSpawns) {
       const p = resolvePlace(layout, { pos: s.pos });
       expect(layout.buildings.some((b) => p.x > b.rect.minX && p.x < b.rect.maxX && p.z > b.rect.minZ && p.z < b.rect.maxZ), s.id).toBe(false);
     }
-    for (const a of cfg.map.ambushPoints) expect(buildingAt(layout, resolvePlace(layout, a))?.id).toBe(a.building);
-    expect(districtAt(cfg.map, { x: -55, y: 0, z: 25 })).toBe('start');
-    expect(districtAt(cfg.map, { x: 500, y: 0, z: 0 })).toBeNull();
+    for (const a of cfg.maps.city_01.ambushPoints) expect(buildingAt(layout, resolvePlace(layout, a))?.id).toBe(a.building);
+    expect(districtAt(cfg.maps.city_01, { x: -55, y: 0, z: 25 })).toBe('start');
+    expect(districtAt(cfg.maps.city_01, { x: 500, y: 0, z: 0 })).toBeNull();
     expect(() => resolvePlace(layout, { building: 'nope', room: 'hall' })).toThrow();
   });
 });

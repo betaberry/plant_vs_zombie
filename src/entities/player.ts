@@ -7,7 +7,7 @@ import { store } from '../core/store';
 import { applyHealthDamage, type DamageInfo, type DamageResult, type IAttackable } from '../logic/attackable';
 import { incomingDamage } from '../logic/damage';
 import type { Input } from '../game/input';
-import type { PhysicsWorld } from '../physics/world';
+import { PLAYER_QUERY_GROUPS, type PhysicsWorld } from '../physics/world';
 
 const UP_LIMIT = Math.PI / 2 - 0.01;
 
@@ -202,7 +202,8 @@ export class Player implements IAttackable {
     }
     this.velocity.y += m.gravity * dt;
     const desired = { x: this.velocity.x * dt, y: this.velocity.y * dt, z: this.velocity.z * dt };
-    this.controller.computeColliderMovement(this.collider, desired, this.phys.R.QueryFilterFlags.EXCLUDE_SENSORS);
+    // PLAYER_QUERY_GROUPS: the player walks through zombie-only barriers (core house doorway).
+    this.controller.computeColliderMovement(this.collider, desired, this.phys.R.QueryFilterFlags.EXCLUDE_SENSORS, PLAYER_QUERY_GROUPS);
     const moved = this.controller.computedMovement();
     const wasGrounded = this.grounded;
     this.grounded = this.controller.computedGrounded();

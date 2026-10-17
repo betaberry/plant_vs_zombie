@@ -65,4 +65,4 @@ A. 按上面做，再加「血量降到一半时扔出小鬼僵尸」：小鬼�
 B. 按上面做，但不扔小鬼，不加新的僵尸类型
 X. Other (please specify)
 
-[Answer]:
+[Answer]: A
